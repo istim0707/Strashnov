@@ -431,7 +431,6 @@ function renderQuick() {
           <div class="panel-header">
             <div>
               <h2>Операция за 5 секунд</h2>
-              <p>Например: потратил 1200 на обед вчера</p>
             </div>
           </div>
           <form class="quick-form" id="quick-form">
