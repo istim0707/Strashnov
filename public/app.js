@@ -32,6 +32,7 @@ let state = null;
 let activeView = "dashboard";
 let historyFilter = "week";
 let historySearch = "";
+let dashboardMonthKey = monthKey(new Date());
 let lastResult = null;
 let toastTimer = null;
 let authMode = "login";
@@ -208,7 +209,7 @@ function renderTopbar() {
 }
 
 function dashboardTitle() {
-  const { summary } = state;
+  const summary = getDashboardSummary();
   if (summary.status === "over") return "Месяц требует коррекции";
   if (summary.status === "watch") return "Бюджет близко к границе";
   return "Вы укладываетесь в бюджет";
@@ -222,10 +223,15 @@ function renderActiveView() {
 }
 
 function renderDashboard() {
-  const { summary } = state;
-  const statusMeta = statusCopy(summary.status);
+  const months = monthArchive();
+  if (!months.some((month) => month.key === dashboardMonthKey)) {
+    dashboardMonthKey = months[0]?.key || monthKey(new Date());
+  }
+  const summary = getDashboardSummary();
+  const statusMeta = statusCopy(summary.status, !summary.isCurrentMonth);
   const ratio = Math.min(summary.budgetRatio, 1.18);
   const gauge = Math.min(summary.budgetRatio, 1);
+  const daysLeftValue = summary.isCurrentMonth ? String(summary.daysLeft) : "Архив";
   return `
     <section class="view">
       <div class="dashboard-grid">
@@ -255,21 +261,114 @@ function renderDashboard() {
             ${metric("Прогноз", money(summary.projected))}
             ${metric("Доход", money(summary.income))}
             ${metric("Дневной лимит", money(summary.dailySafeSpend))}
-            ${metric("Дней осталось", String(summary.daysLeft))}
+            ${metric(summary.isCurrentMonth ? "Дней осталось" : "Период", daysLeftValue)}
           </div>
         </div>
         <section class="panel">
           <div class="panel-header">
             <div>
               <h2>Драйверы расходов</h2>
-              <p>${escapeHtml(summary.monthLabel)}</p>
+              <p>${escapeHtml(summary.monthLabel)}${summary.isCurrentMonth ? "" : " · сохранённый месяц"}</p>
             </div>
           </div>
-          ${renderCategoryList(summary.categoryTotals)}
+          ${renderMonthArchive(months)}
+          ${summary.categoryTotals.length ? renderCategoryList(summary.categoryTotals) : `<div class="empty small">В этом месяце расходов не было</div>`}
         </section>
       </div>
     </section>
   `;
+}
+
+function renderMonthArchive(months) {
+  return `
+    <div class="month-archive" aria-label="Архив месяцев">
+      ${months.map((month) => `
+        <button class="${month.key === dashboardMonthKey ? "active" : ""}" data-dashboard-month="${month.key}" type="button">
+          <strong>${escapeHtml(month.shortLabel)}</strong>
+          <span>${money(month.spent)}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function getDashboardSummary() {
+  const currentKey = monthKey(new Date());
+  const availableKeys = new Set([currentKey]);
+  for (const transaction of state.transactions) {
+    availableKeys.add(monthKey(new Date(transaction.occurredAt)));
+  }
+  if (!availableKeys.has(dashboardMonthKey)) dashboardMonthKey = currentKey;
+  return dashboardMonthKey === currentKey ? { ...state.summary, isCurrentMonth: true } : summarizeMonth(dashboardMonthKey);
+}
+
+function monthArchive() {
+  const keys = new Set([monthKey(new Date())]);
+  for (const transaction of state.transactions) {
+    keys.add(monthKey(new Date(transaction.occurredAt)));
+  }
+  return [...keys]
+    .sort((a, b) => b.localeCompare(a))
+    .map((key) => {
+      const summary = key === monthKey(new Date()) ? state.summary : summarizeMonth(key);
+      return {
+        key,
+        shortLabel: shortMonthLabel(key),
+        spent: summary.spent
+      };
+    });
+}
+
+function summarizeMonth(key) {
+  const { start, end } = monthBounds(key);
+  const expenses = state.transactions.filter((transaction) => (
+    transaction.type === "expense"
+    && new Date(transaction.occurredAt) >= start
+    && new Date(transaction.occurredAt) < end
+  ));
+  const incomeItems = state.transactions.filter((transaction) => (
+    transaction.type === "income"
+    && new Date(transaction.occurredAt) >= start
+    && new Date(transaction.occurredAt) < end
+  ));
+  const spent = roundClientMoney(expenses.reduce((sum, transaction) => sum + transaction.amount, 0));
+  const income = roundClientMoney(incomeItems.reduce((sum, transaction) => sum + transaction.amount, 0));
+  const budget = Number(state.settings?.monthlyBudget || state.summary.budget || 0);
+  const remaining = roundClientMoney(budget - spent);
+  const daysInMonth = Math.round((end - start) / 86400000);
+  const budgetRatio = budget > 0 ? spent / budget : 0;
+  const status = budgetRatio > 1.05 ? "over" : budgetRatio > 0.92 ? "watch" : "on-track";
+  const categoryTotals = state.categories.map((category) => {
+    const total = expenses
+      .filter((transaction) => transaction.category === category.id)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    return {
+      ...category,
+      total: roundClientMoney(total),
+      share: spent ? total / spent : 0
+    };
+  })
+    .filter((category) => category.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  return {
+    ...state.summary,
+    monthLabel: fullMonthLabel(key),
+    budget,
+    spent,
+    income,
+    remaining,
+    projected: spent,
+    dailySafeSpend: 0,
+    daysElapsed: daysInMonth,
+    daysInMonth,
+    daysLeft: 0,
+    budgetRatio,
+    projectedRatio: budgetRatio,
+    status,
+    categoryTotals,
+    isCurrentMonth: key === monthKey(new Date())
+  };
 }
 
 function renderQuick() {
@@ -357,14 +456,17 @@ function renderHistory() {
           ${renderFutureSummary(scheduled)}
         </section>
         <section class="panel">
-          <div class="history-toolbar">
-            <input class="search-input" id="history-search" placeholder="Поиск по операциям" value="${escapeAttr(historySearch)}" />
-            <div class="segmented">
-              <button data-history-filter="week" class="${historyFilter === "week" ? "active" : ""}">Неделя</button>
-              <button data-history-filter="month" class="${historyFilter === "month" ? "active" : ""}">Месяц</button>
-              <button data-history-filter="future" class="${historyFilter === "future" ? "active" : ""}">Будущие</button>
-              <button data-history-filter="all" class="${historyFilter === "all" ? "active" : ""}">Все</button>
+          <div class="history-controls">
+            <div class="history-toolbar">
+              <input class="search-input" id="history-search" placeholder="Поиск по операциям" value="${escapeAttr(historySearch)}" />
+              <div class="segmented">
+                <button data-history-filter="week" class="${historyFilter === "week" ? "active" : ""}">Неделя</button>
+                <button data-history-filter="month" class="${historyFilter === "month" ? "active" : ""}">Месяц</button>
+                <button data-history-filter="future" class="${historyFilter === "future" ? "active" : ""}">Будущие</button>
+                <button data-history-filter="all" class="${historyFilter === "all" ? "active" : ""}">Все</button>
+              </div>
             </div>
+            <button class="clear-history-button" data-clear-history type="button" ${state.transactions.length ? "" : "disabled"}>${icon("trash")} Очистить историю</button>
           </div>
           ${scheduled.length && historyFilter === "week" ? renderScheduledBlock(scheduled) : ""}
           ${transactions.length ? `<div class="tx-list">${transactions.map(renderTransaction).join("")}</div>` : `<div class="empty">Операции не найдены</div>`}
@@ -674,6 +776,15 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-dashboard-month]").forEach((button) => {
+    button.addEventListener("click", () => {
+      dashboardMonthKey = button.dataset.dashboardMonth;
+      render();
+    });
+  });
+
+  document.querySelector("[data-clear-history]")?.addEventListener("click", clearHistory);
+
   const search = document.querySelector("#history-search");
   if (search) {
     search.addEventListener("input", (event) => {
@@ -829,6 +940,25 @@ async function deleteTransaction(id) {
   }
 }
 
+async function clearHistory() {
+  if (!state.transactions.length) return;
+  const ok = window.confirm("Удалить всю историю операций? Бюджет, профиль и категории останутся, но операции восстановить нельзя.");
+  if (!ok) return;
+  try {
+    const result = await api("/api/transactions", { method: "DELETE" });
+    state.transactions = result.transactions;
+    state.summary = result.summary;
+    state.insights = result.insights;
+    lastResult = null;
+    historySearch = "";
+    dashboardMonthKey = monthKey(new Date());
+    render();
+    toast("История очищена", "Бюджет и категории сохранены");
+  } catch (error) {
+    toast("Не очищено", error.message);
+  }
+}
+
 async function updateTransaction(id, payload) {
   try {
     const result = await api(`/api/transactions/${id}`, {
@@ -880,7 +1010,25 @@ function metric(label, value) {
   return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
-function statusCopy(status) {
+function statusCopy(status, archived = false) {
+  if (archived) {
+    if (status === "over") {
+      return {
+        label: "Месяц закрыт выше бюджета",
+        body: "Это сохранённый месяц. Посмотрите драйверы расходов и сравните их с текущим месяцем."
+      };
+    }
+    if (status === "watch") {
+      return {
+        label: "Месяц был близко к лимиту",
+        body: "Архив показывает, где бюджет почти вышел за границу. Эти категории стоит держать под наблюдением."
+      };
+    }
+    return {
+      label: "Месяц закрыт в бюджете",
+      body: "Архив сохранён: можно сравнивать прошлые траты с текущим месяцем."
+    };
+  }
   if (status === "over") {
     return {
       label: "Перерасход по прогнозу",
@@ -914,6 +1062,32 @@ function categoryById(id) {
 
 function money(value) {
   return formatter.format(Number(value) || 0);
+}
+
+function roundClientMoney(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function monthKey(date) {
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return `${safeDate.getFullYear()}-${String(safeDate.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthBounds(key) {
+  const [year, month] = String(key || monthKey(new Date())).split("-").map(Number);
+  const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
+  const end = new Date(year, month, 1, 0, 0, 0, 0);
+  return { start, end };
+}
+
+function fullMonthLabel(key) {
+  const { start } = monthBounds(key);
+  return start.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+}
+
+function shortMonthLabel(key) {
+  const { start } = monthBounds(key);
+  return start.toLocaleDateString("ru-RU", { month: "short", year: "2-digit" }).replace(".", "");
 }
 
 function dateInputToIso(value) {

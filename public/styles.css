@@ -713,6 +713,41 @@ h1 {
   gap: 10px;
 }
 
+.month-archive {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.month-archive button {
+  display: grid;
+  min-width: 104px;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.month-archive button.active {
+  border-color: #101214;
+  background: #101214;
+  color: #fff;
+}
+
+.month-archive span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.month-archive button.active span {
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .category-row {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) auto;
@@ -956,7 +991,38 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
+}
+
+.history-controls {
+  display: grid;
+  gap: 10px;
   margin-bottom: 16px;
+}
+
+.clear-history-button {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(214, 79, 63, 0.2);
+  border-radius: 8px;
+  color: #9f2f20;
+  background: var(--red-soft);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.clear-history-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.clear-history-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .scheduled-block {
@@ -1512,6 +1578,10 @@ h1 {
 
   .history-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .clear-history-button {
+    justify-self: stretch;
   }
 
   .segmented {
