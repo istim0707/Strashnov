@@ -960,6 +960,21 @@ async function apiDeleteTransaction(req, res, id) {
   return apiDeleteUserTransaction(req, res, id);
 }
 
+async function apiClearTransactions(req, res) {
+  const context = await requireAuth(req, res);
+  if (!context) return;
+
+  context.user.transactions = [];
+  await writeStore(context.store);
+  const summary = summarize(context.user);
+  responseJson(res, 200, {
+    ok: true,
+    transactions: [],
+    summary,
+    insights: buildInsights(context.user, summary)
+  });
+}
+
 async function apiDeleteUserTransaction(req, res, id) {
   const context = await requireAuth(req, res);
   if (!context) return;
@@ -1433,6 +1448,7 @@ const server = http.createServer(async (req, res) => {
       return await apiDeleteCategory(req, res, url.pathname.split("/").pop());
     }
     if (url.pathname === "/api/transactions" && req.method === "POST") return await apiCreateTransaction(req, res);
+    if (url.pathname === "/api/transactions" && req.method === "DELETE") return await apiClearTransactions(req, res);
     if (url.pathname.startsWith("/api/transactions/") && req.method === "PATCH") {
       return await apiPatchTransaction(req, res, url.pathname.split("/").pop());
     }
