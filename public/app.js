@@ -439,6 +439,7 @@ function renderQuick() {
             <input class="date-input" id="quick-date" type="date" aria-label="Дата операции" title="Дата операции" />
             <button class="primary-button" id="quick-submit" type="submit">${icon("send")} Добавить</button>
           </form>
+          <div class="suggestion-label">Примеры</div>
           <div class="suggestions">
             ${["пятёрочка 1800", "доставка 490", "12 мая интернет 1200", "такси 760 вчера", "зарплата 185000"].map((text) => `<button class="chip" data-example="${escapeAttr(text)}">${escapeHtml(text)}</button>`).join("")}
           </div>
@@ -533,10 +534,25 @@ function renderHistory() {
             <button class="clear-history-button" data-clear-history type="button" ${state.transactions.length ? "" : "disabled"}>${icon("trash")} Очистить историю</button>
           </div>
           ${visibleScheduled.length && historyFilter === "week" ? renderScheduledBlock(visibleScheduled) : ""}
-          ${transactions.length ? `<div class="tx-list">${transactions.map(renderTransaction).join("")}</div>` : `<div class="empty">Операции не найдены</div>`}
+          ${transactions.length ? `<div class="tx-list">${transactions.map(renderTransaction).join("")}</div>` : renderHistoryEmptyState()}
         </section>
       </div>
     </section>
+  `;
+}
+
+function renderHistoryEmptyState() {
+  if (state.transactions.length) {
+    return `<div class="empty">Операции не найдены</div>`;
+  }
+  return `
+    <div class="empty action-empty">
+      <div>
+        <strong>Попробуйте добавить первую операцию</strong>
+        <p>История, категории и динамика появятся здесь сразу после добавления.</p>
+      </div>
+      <button class="ghost-button" data-view-link="quick" type="button">Добавить операцию →</button>
+    </div>
   `;
 }
 
@@ -553,13 +569,14 @@ function renderInsights() {
   const summary = state.summary;
   const topCategories = summary.categoryTotals.slice(0, 4);
   const spendRate = summary.budget > 0 ? Math.round(summary.projectedRatio * 100) : 0;
+  const primaryMetric = state.transactions.length ? primary.metric : "";
   return `
     <section class="view">
       <div class="advice-grid">
         <article class="insight-card primary ${primary.tone}">
           <div class="insight-meta">
             <span>Главный рычаг</span>
-            <strong>${escapeHtml(primary.metric)}</strong>
+            ${primaryMetric ? `<strong class="insight-pace"><span>темп</span>${escapeHtml(primaryMetric)}</strong>` : ""}
           </div>
           <div>
             <h2>${escapeHtml(primary.title)}</h2>
