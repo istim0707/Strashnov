@@ -1008,6 +1008,14 @@ async function apiDeleteCategory(req, res, id) {
 async function classifyTransaction(rawText, user = null) {
   const explicitOccurredAt = parseExplicitDate(rawText);
   const heuristic = classifyByRules(rawText, user);
+  if (!shouldUseLLM(heuristic)) {
+    return {
+      ...heuristic,
+      occurredAt: explicitOccurredAt || heuristic.occurredAt,
+      source: "local",
+      ai: { provider: "Local rules", used: false, reason: "confident local match" }
+    };
+  }
   try {
     const llm = await classifyByLLM(rawText, heuristic);
     const normalized = normalizeClassification(rawText, heuristic, llm, user);
@@ -1025,6 +1033,16 @@ async function classifyTransaction(rawText, user = null) {
       ai: { provider: "Local rules", used: false, reason: error.message }
     };
   }
+}
+
+function shouldUseLLM(heuristic) {
+  if (process.env.FINLEY_LLM_MODE === "always") return true;
+  if (process.env.FINLEY_LLM_MODE === "off") return false;
+  if (!process.env.OPENAI_API_KEY && process.env.FINLEY_USE_POLLINATIONS !== "true") return false;
+  if (!heuristic.amount) return true;
+  if (heuristic.type === "income") return false;
+  if (heuristic.category && heuristic.category !== "other") return false;
+  return true;
 }
 
 async function classifyByLLM(rawText, heuristic) {
