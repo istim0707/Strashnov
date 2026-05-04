@@ -375,37 +375,111 @@ function renderHistory() {
 }
 
 function renderInsights() {
-  const [primary, ...rest] = state.insights;
+  const fallback = {
+    tone: "neutral",
+    title: "Добавьте несколько операций",
+    body: "Finley покажет конкретные рычаги, когда увидит ваши реальные расходы.",
+    action: "Добавить операции",
+    metric: "0/5",
+    detail: "Начните с еды, транспорта, дома и регулярных платежей."
+  };
+  const [primary = fallback, ...rest] = state.insights.length ? state.insights : [fallback];
+  const summary = state.summary;
+  const topCategories = summary.categoryTotals.slice(0, 4);
+  const spendRate = summary.budget > 0 ? Math.round(summary.projectedRatio * 100) : 0;
   return `
     <section class="view">
-      <div class="insights-grid">
-        <article class="insight-card primary">
+      <div class="advice-grid">
+        <article class="insight-card primary ${primary.tone}">
           <div class="insight-meta">
             <span>Главный рычаг</span>
             <strong>${escapeHtml(primary.metric)}</strong>
           </div>
           <div>
             <h2>${escapeHtml(primary.title)}</h2>
-            <p style="margin-top:14px">${escapeHtml(primary.body)}</p>
+            <p>${escapeHtml(primary.body)}</p>
+            ${primary.detail ? `<small>${escapeHtml(primary.detail)}</small>` : ""}
           </div>
           <button class="ghost-button" data-view-link="${primary.tone === "neutral" ? "quick" : "history"}">${escapeHtml(primary.action)}</button>
         </article>
-        <div class="insight-list">
-          ${rest.map((insight) => `
-            <article class="insight-card">
-              <div class="insight-meta">
-                <span>${toneLabel(insight.tone)}</span>
-                <strong class="insight-metric">${escapeHtml(insight.metric)}</strong>
-              </div>
-              <div>
-                <h3>${escapeHtml(insight.title)}</h3>
-                <p style="margin-top:8px">${escapeHtml(insight.body)}</p>
-              </div>
-            </article>
-          `).join("")}
-        </div>
+        <section class="panel advice-plan">
+          <div class="panel-header">
+            <div>
+              <h2>План на сегодня</h2>
+              <p>Что держать в голове до следующей покупки</p>
+            </div>
+          </div>
+          <div class="advice-kpis">
+            ${metric("Дневной лимит", money(summary.dailySafeSpend))}
+            ${metric("До конца месяца", `${summary.daysLeft} дн.`)}
+            ${metric("Темп бюджета", `${spendRate}%`)}
+          </div>
+          <div class="advice-rule">
+            <strong>${summary.remaining >= 0 ? "Правило дня" : "Стоп-сигнал"}</strong>
+            <span>${summary.remaining >= 0
+              ? `Перед необязательной покупкой дороже ${money(Math.max(500, summary.dailySafeSpend * 0.35))} проверьте, не съедает ли она завтрашний лимит.`
+              : `Бюджет уже в минусе на ${money(Math.abs(summary.remaining))}. Новые необязательные расходы лучше переносить.`}</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="advice-board">
+        <section class="panel advice-section">
+          <div class="panel-header">
+            <div>
+              <h2>Что сделать дальше</h2>
+              <p>Конкретные действия вместо общих наблюдений</p>
+            </div>
+          </div>
+          <div class="advice-list">
+            ${rest.length ? rest.map(renderAdviceItem).join("") : renderAdviceItem(fallback)}
+          </div>
+        </section>
+
+        <section class="panel advice-section">
+          <div class="panel-header">
+            <div>
+              <h2>Категории риска</h2>
+              <p>Где маленькое изменение даст заметный эффект</p>
+            </div>
+          </div>
+          ${topCategories.length ? `<div class="risk-list">${topCategories.map(renderRiskCategory).join("")}</div>` : `<div class="empty small">Пока нет расходов за месяц</div>`}
+        </section>
       </div>
     </section>
+  `;
+}
+
+function renderAdviceItem(insight) {
+  return `
+    <article class="advice-item ${escapeAttr(insight.tone || "neutral")}">
+      <div class="advice-item-top">
+        <span>${toneLabel(insight.tone)}</span>
+        <strong>${escapeHtml(insight.metric)}</strong>
+      </div>
+      <h3>${escapeHtml(insight.title)}</h3>
+      <p>${escapeHtml(insight.body)}</p>
+      ${insight.detail ? `<small>${escapeHtml(insight.detail)}</small>` : ""}
+      <button class="ghost-button compact" data-view-link="${insight.tone === "neutral" ? "quick" : "history"}">${escapeHtml(insight.action || "Открыть")}</button>
+    </article>
+  `;
+}
+
+function renderRiskCategory(category) {
+  const share = Math.round(category.share * 100);
+  const saveTen = money(category.total * 0.1);
+  return `
+    <article class="risk-row">
+      <div class="cat-icon" style="--cat:${category.color}">${icon(category.icon)}</div>
+      <div class="risk-main">
+        <div class="risk-title">
+          <strong>${escapeHtml(category.label)}</strong>
+          <span>${money(category.total)}</span>
+        </div>
+        <div class="mini-track"><div class="mini-fill" style="--fill:${Math.min(100, share)}%;--cat:${category.color}"></div></div>
+        <p>${share}% расходов · минус 10% даст ${saveTen}</p>
+      </div>
+    </article>
   `;
 }
 
