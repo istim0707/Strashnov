@@ -11,6 +11,14 @@ const DATA_FILE = path.join(DATA_DIR, "finley.json");
 const SESSION_COOKIE = "finley_session";
 const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
 
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+});
+
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled rejection:", error);
+});
+
 const CATEGORIES = [
   { id: "food", label: "Еда", icon: "utensils", color: "#0f9f7a" },
   { id: "groceries", label: "Продукты", icon: "basket", color: "#5f8d3d" },
@@ -1442,6 +1450,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/auth/signup" && req.method === "POST") return await apiSignup(req, res);
     if (url.pathname === "/api/auth/login" && req.method === "POST") return await apiLogin(req, res);
     if (url.pathname === "/api/auth/logout" && req.method === "POST") return await apiLogout(req, res);
+    if (url.pathname === "/healthz" && req.method === "GET") return responseJson(res, 200, { ok: true });
     if (url.pathname === "/api/state" && req.method === "GET") return await apiState(req, res);
     if (url.pathname === "/api/categories" && req.method === "POST") return await apiCreateCategory(req, res);
     if (url.pathname.startsWith("/api/categories/") && req.method === "DELETE") {
