@@ -1,0 +1,10 @@
+node_modules/
+data/
+.env
+*.log
+*.pid
+finley-*.png
+finley-tunnel-known-hosts
+cloudflared.exe
+finley-github-upload/
+finley-github-upload.zip
