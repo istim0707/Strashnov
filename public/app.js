@@ -303,7 +303,11 @@ function getDashboardSummary() {
 }
 
 function monthArchive() {
-  const keys = new Set([monthKey(new Date())]);
+  const today = new Date();
+  const keys = new Set();
+  for (let offset = 0; offset < 6; offset += 1) {
+    keys.add(monthKey(new Date(today.getFullYear(), today.getMonth() - offset, 1)));
+  }
   for (const transaction of state.transactions) {
     keys.add(monthKey(new Date(transaction.occurredAt)));
   }
