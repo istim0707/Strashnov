@@ -674,6 +674,10 @@ h1 {
   transition: width 520ms cubic-bezier(.2, .8, .2, 1), background 180ms ease;
 }
 
+.runway-fill.on-track {
+  background: var(--green);
+}
+
 .runway-fill.watch {
   background: var(--amber);
 }

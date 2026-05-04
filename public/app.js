@@ -237,6 +237,7 @@ function renderDashboard() {
   const summary = getDashboardSummary();
   const statusMeta = statusCopy(summary.status, !summary.isCurrentMonth);
   const ratio = Math.min(summary.budgetRatio, 1.18);
+  const spentZone = spentBudgetZone(summary.budgetRatio);
   const daysLeftValue = summary.isCurrentMonth ? String(summary.daysLeft) : "Архив";
   return `
     <section class="view">
@@ -252,7 +253,7 @@ function renderDashboard() {
               </div>
               <div class="runway">
                 <div class="runway-track">
-                  <div class="runway-fill ${summary.status}" style="--fill:${ratio * 100}%"></div>
+                  <div class="runway-fill ${spentZone}" style="--fill:${ratio * 100}%"></div>
                 </div>
                 <div class="runway-labels"><span>${money(summary.spent)} потрачено</span><span>${money(summary.budget)} бюджет</span></div>
               </div>
@@ -279,6 +280,12 @@ function renderDashboard() {
       </div>
     </section>
   `;
+}
+
+function spentBudgetZone(ratio) {
+  if (ratio > 0.8) return "over";
+  if (ratio > 0.6) return "watch";
+  return "on-track";
 }
 
 function renderForecastBanner(summary) {
