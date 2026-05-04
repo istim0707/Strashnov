@@ -152,9 +152,7 @@ function render() {
         ${nav}
         <div class="sidebar-footer">
           ${renderUserProfile()}
-          ${renderAiPill()}
           ${renderBudgetEditor()}
-          ${renderCategoryManager()}
         </div>
       </aside>
       <main class="main">
@@ -163,9 +161,9 @@ function render() {
           <div><strong>Finley</strong><span>${escapeHtml(state.user?.name || "Профиль")} · ${escapeHtml(state.summary.monthLabel)}</span></div>
         </div>
         ${renderTopbar()}
+        ${mobileNav}
         ${renderActiveView()}
       </main>
-      ${mobileNav}
     </div>
   `;
   bindEvents();
@@ -202,8 +200,10 @@ function renderTopbar() {
         <h1>${escapeHtml(copy.title)}</h1>
         <p class="topbar-subtitle">${escapeHtml(copy.subtitle)}</p>
       </div>
-      ${activeView !== "quick" ? `<button class="primary-button" data-view-link="quick" title="Добавить транзакцию">${icon("quick")} Добавить</button>` : ""}
-      <button class="ghost-button" data-logout type="button">Выйти</button>
+      <div class="topbar-actions">
+        ${activeView !== "quick" ? `<button class="primary-button" data-view-link="quick" title="Добавить транзакцию">${icon("quick")} Добавить</button>` : ""}
+        <button class="ghost-button" data-logout type="button">Выйти</button>
+      </div>
     </header>
   `;
 }
@@ -293,8 +293,12 @@ function renderMonthArchive(months) {
 }
 
 function getDashboardSummary() {
-  const currentKey = monthKey(new Date());
-  const availableKeys = new Set([currentKey]);
+  const today = new Date();
+  const currentKey = monthKey(today);
+  const availableKeys = new Set();
+  for (let offset = 0; offset < 6; offset += 1) {
+    availableKeys.add(monthKey(new Date(today.getFullYear(), today.getMonth() - offset, 1)));
+  }
   for (const transaction of state.transactions) {
     availableKeys.add(monthKey(new Date(transaction.occurredAt)));
   }
@@ -337,7 +341,8 @@ function summarizeMonth(key) {
   ));
   const spent = roundClientMoney(expenses.reduce((sum, transaction) => sum + transaction.amount, 0));
   const income = roundClientMoney(incomeItems.reduce((sum, transaction) => sum + transaction.amount, 0));
-  const budget = Number(state.settings?.monthlyBudget || state.summary.budget || 0);
+  const baseBudget = Number(state.settings?.monthlyBudget || state.summary.baseBudget || 0);
+  const budget = roundClientMoney(baseBudget + income);
   const remaining = roundClientMoney(budget - spent);
   const daysInMonth = Math.round((end - start) / 86400000);
   const budgetRatio = budget > 0 ? spent / budget : 0;
@@ -358,6 +363,7 @@ function summarizeMonth(key) {
   return {
     ...state.summary,
     monthLabel: fullMonthLabel(key),
+    baseBudget,
     budget,
     spent,
     income,
