@@ -48,6 +48,10 @@ const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
   month: "short"
 });
 
+const weekdayFormatter = new Intl.DateTimeFormat("ru-RU", {
+  weekday: "short"
+});
+
 init();
 
 async function init() {
@@ -487,6 +491,7 @@ function renderHistory() {
             </div>
           </div>
           <div class="week-amount">${money(state.summary.week.spent)}</div>
+          ${renderWeekPulse()}
           <div class="week-row">
             <span>${weekTop ? "Больше всего ушло в" : "Главная категория"}</span>
             <strong>${weekTop ? escapeHtml(weekTop.label) : "нет данных"}</strong>
@@ -558,7 +563,7 @@ function renderInsights() {
           <div class="advice-rule">
             <strong>${summary.remaining >= 0 ? "Правило дня" : "Стоп-сигнал"}</strong>
             <span>${summary.remaining >= 0
-              ? `Перед необязательной покупкой дороже ${money(Math.max(500, summary.dailySafeSpend * 0.35))} проверьте, не съедает ли она завтрашний лимит.`
+              ? `Держите необязательные покупки в пределах ${money(summary.dailySafeSpend)} за день. Если одна покупка выше этого, она уже съедает завтрашний лимит.`
               : `Бюджет уже в минусе на ${money(Math.abs(summary.remaining))}. Новые необязательные расходы лучше переносить.`}</span>
           </div>
         </section>
@@ -660,6 +665,78 @@ function renderScheduledBlock(transactions) {
       <div class="tx-list">${transactions.slice(0, 3).map(renderTransaction).join("")}</div>
     </section>
   `;
+}
+
+function renderWeekPulse() {
+  const stats = weekPulseStats();
+  const max = Math.max(...stats.days.map((day) => day.total), 1);
+  const top = stats.days.reduce((best, day) => (day.total > best.total ? day : best), stats.days[0]);
+  const delta = stats.weekSpent - stats.previousSpent;
+  const deltaTone = stats.previousSpent === 0 ? "flat" : delta > 0 ? "bad" : delta < 0 ? "good" : "flat";
+  const deltaText = stats.previousSpent > 0
+    ? `${delta > 0 ? "+" : delta < 0 ? "−" : ""}${money(Math.abs(delta))}`
+    : stats.weekSpent > 0 ? "новая база" : "без трат";
+
+  return `
+    <section class="week-pulse" aria-label="Динамика расходов за неделю">
+      <div class="week-bars">
+        ${stats.days.map((day) => `
+          <div class="week-bar" title="${escapeAttr(day.label)} · ${escapeAttr(money(day.total))}" style="--bar:${Math.max(6, (day.total / max) * 100)}%">
+            <i></i>
+            <span>${escapeHtml(day.short)}</span>
+          </div>
+        `).join("")}
+      </div>
+      <div class="week-facts">
+        <div><span>Средний день</span><strong>${money(stats.average)}</strong></div>
+        <div><span>Пик недели</span><strong>${escapeHtml(top.short)} · ${money(top.total)}</strong></div>
+        <div><span>К прошлой неделе</span><strong class="${deltaTone}">${escapeHtml(deltaText)}</strong></div>
+      </div>
+    </section>
+  `;
+}
+
+function weekPulseStats() {
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const start = new Date(today);
+  start.setDate(today.getDate() - 6);
+  start.setHours(0, 0, 0, 0);
+  const previousStart = new Date(start);
+  previousStart.setDate(start.getDate() - 7);
+  const previousEnd = new Date(start);
+  const expenseTransactions = state.transactions.filter((transaction) => transaction.type === "expense");
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const dayStart = new Date(start);
+    dayStart.setDate(start.getDate() + index);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayStart.getDate() + 1);
+    const total = expenseTransactions
+      .filter((transaction) => {
+        const occurredAt = new Date(transaction.occurredAt);
+        return occurredAt >= dayStart && occurredAt < dayEnd;
+      })
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    return {
+      short: weekdayFormatter.format(dayStart).replace(".", ""),
+      label: dateFormatter.format(dayStart),
+      total: roundClientMoney(total)
+    };
+  });
+  const weekSpent = roundClientMoney(days.reduce((sum, day) => sum + day.total, 0));
+  const previousSpent = roundClientMoney(expenseTransactions
+    .filter((transaction) => {
+      const occurredAt = new Date(transaction.occurredAt);
+      return occurredAt >= previousStart && occurredAt < previousEnd;
+    })
+    .reduce((sum, transaction) => sum + transaction.amount, 0));
+
+  return {
+    days,
+    weekSpent,
+    previousSpent,
+    average: roundClientMoney(weekSpent / 7)
+  };
 }
 
 function renderFutureSummary(transactions) {

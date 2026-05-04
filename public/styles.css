@@ -1239,6 +1239,85 @@ h1 {
   border-top: 1px solid var(--line);
 }
 
+.week-pulse {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.week-bars {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+  min-height: 118px;
+}
+
+.week-bar {
+  display: grid;
+  gap: 7px;
+  align-items: end;
+  min-width: 0;
+  height: 100%;
+}
+
+.week-bar i {
+  display: block;
+  min-height: 6px;
+  height: var(--bar);
+  border-radius: 8px 8px 3px 3px;
+  background: linear-gradient(180deg, #111316, #4b5563);
+}
+
+.week-bar span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.week-facts div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.week-facts span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.week-facts strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-facts strong.good {
+  color: var(--green);
+}
+
+.week-facts strong.bad {
+  color: var(--red);
+}
+
 .future-summary {
   display: grid;
   gap: 8px;
@@ -1330,6 +1409,7 @@ h1 {
 .insight-card.primary {
   min-height: 260px;
   align-content: space-between;
+  gap: 20px;
   background: #101214;
   color: #fff;
 }
@@ -1343,12 +1423,22 @@ h1 {
 .insight-card.primary small {
   display: block;
   margin-top: 12px;
-  line-height: 1.45;
+  line-height: 1.55;
 }
 
 .insight-card h2 {
   font-size: clamp(25px, 4vw, 42px);
   line-height: 1.02;
+}
+
+.insight-card.primary h2 {
+  line-height: 1.12;
+}
+
+.insight-card.primary p {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .insight-card h3 {
@@ -1744,6 +1834,14 @@ h1 {
   .metric-grid,
   .parse-grid {
     grid-template-columns: 1fr;
+  }
+
+  .week-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .week-bars {
+    gap: 6px;
   }
 
   .month-archive {
