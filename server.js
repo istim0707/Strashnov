@@ -10,6 +10,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const DATA_FILE = path.join(DATA_DIR, "finley.json");
 const SESSION_COOKIE = "finley_session";
 const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
+const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Moscow";
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception:", error);
@@ -93,6 +94,19 @@ const keywordCategories = [
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function businessToday(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(now).reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = Number(part.value);
+    return acc;
+  }, {});
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0, 0));
 }
 
 function dayIso(daysAgo, hour = 12) {
@@ -491,7 +505,7 @@ function daysBetween(from, to) {
 }
 
 function summarize(store) {
-  const today = new Date();
+  const today = businessToday();
   const { start, end } = monthRange(today);
   const settings = store.settings;
   const categories = categoriesFor(store);
