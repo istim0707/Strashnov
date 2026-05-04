@@ -498,7 +498,14 @@ function summarize(store) {
   const monthTransactions = store.transactions.filter((transaction) => isInRange(transaction.occurredAt, start, end));
   const expenses = monthTransactions.filter((transaction) => transaction.type === "expense");
   const incomeItems = monthTransactions.filter((transaction) => transaction.type === "income");
+  const tomorrow = new Date(today);
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const realizedExpenses = expenses.filter((transaction) => new Date(transaction.occurredAt) < tomorrow);
+  const scheduledMonthExpenses = expenses.filter((transaction) => new Date(transaction.occurredAt) >= tomorrow);
   const spent = roundMoney(expenses.reduce((sum, transaction) => sum + transaction.amount, 0));
+  const realizedSpent = roundMoney(realizedExpenses.reduce((sum, transaction) => sum + transaction.amount, 0));
+  const scheduledMonthSpent = roundMoney(scheduledMonthExpenses.reduce((sum, transaction) => sum + transaction.amount, 0));
   const income = roundMoney(incomeItems.reduce((sum, transaction) => sum + transaction.amount, 0));
   const baseBudget = Number(settings.monthlyBudget || 0);
   const budget = roundMoney(baseBudget + income);
@@ -506,7 +513,8 @@ function summarize(store) {
   const daysElapsed = daysBetween(start, today);
   const daysInMonth = Math.round((end - start) / 86400000);
   const daysLeft = Math.max(0, daysInMonth - daysElapsed);
-  const projected = roundMoney((spent / Math.max(1, daysElapsed)) * daysInMonth);
+  const projectedDailySpend = daysLeft > 0 ? (realizedSpent / Math.max(1, daysElapsed)) * daysLeft : 0;
+  const projected = roundMoney(realizedSpent + scheduledMonthSpent + projectedDailySpend);
   const dailySafeSpend = roundMoney(remaining > 0 ? remaining / Math.max(1, daysLeft || 1) : 0);
   const budgetRatio = budget > 0 ? spent / budget : 0;
   const projectedRatio = budget > 0 ? projected / budget : 0;
@@ -536,7 +544,7 @@ function summarize(store) {
   const weekSpent = roundMoney(weekExpenses.reduce((sum, transaction) => sum + transaction.amount, 0));
   const topWeekCategory = categoryTotalsFor(weekExpenses, categories)[0] || null;
   const futureExpenses = store.transactions
-    .filter((transaction) => transaction.type === "expense" && new Date(transaction.occurredAt) > today)
+    .filter((transaction) => transaction.type === "expense" && new Date(transaction.occurredAt) >= tomorrow)
     .sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
   const futureSpent = roundMoney(futureExpenses.reduce((sum, transaction) => sum + transaction.amount, 0));
 
