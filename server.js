@@ -500,7 +500,8 @@ function summarize(store) {
   const incomeItems = monthTransactions.filter((transaction) => transaction.type === "income");
   const spent = roundMoney(expenses.reduce((sum, transaction) => sum + transaction.amount, 0));
   const income = roundMoney(incomeItems.reduce((sum, transaction) => sum + transaction.amount, 0));
-  const budget = Number(settings.monthlyBudget || 0);
+  const baseBudget = Number(settings.monthlyBudget || 0);
+  const budget = roundMoney(baseBudget + income);
   const remaining = roundMoney(budget - spent);
   const daysElapsed = daysBetween(start, today);
   const daysInMonth = Math.round((end - start) / 86400000);
@@ -542,6 +543,7 @@ function summarize(store) {
   return {
     currency: settings.currency || "RUB",
     monthLabel: today.toLocaleDateString(settings.locale || "ru-RU", { month: "long", year: "numeric" }),
+    baseBudget,
     budget,
     spent,
     income,
