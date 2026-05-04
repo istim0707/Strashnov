@@ -237,7 +237,7 @@ function renderDashboard() {
   const summary = getDashboardSummary();
   const statusMeta = statusCopy(summary.status, !summary.isCurrentMonth);
   const ratio = Math.min(summary.budgetRatio, 1.18);
-  const spentZone = spentBudgetZone(summary.budgetRatio);
+  const spentZone = budgetRiskZone(summary.budgetRatio);
   const daysLeftValue = summary.isCurrentMonth ? String(summary.daysLeft) : "Архив";
   return `
     <section class="view">
@@ -282,7 +282,7 @@ function renderDashboard() {
   `;
 }
 
-function spentBudgetZone(ratio) {
+function budgetRiskZone(ratio) {
   if (ratio > 0.8) return "over";
   if (ratio > 0.6) return "watch";
   return "on-track";
@@ -308,8 +308,9 @@ function renderBudgetMeter(summary) {
   const forecastPercent = Math.round(summary.projectedRatio * 100);
   const spentPercent = Math.round(summary.budgetRatio * 100);
   const marker = Math.min(100, Math.max(0, summary.projectedRatio * 100));
+  const paceZone = budgetRiskZone(summary.projectedRatio);
   return `
-    <div class="budget-meter ${summary.status}" style="--marker:${marker}%">
+    <div class="budget-meter ${paceZone}" style="--marker:${marker}%">
       <span>Темп месяца</span>
       <strong>${forecastPercent}%</strong>
       <p>прогноз к бюджету</p>
@@ -452,7 +453,7 @@ function renderQuick() {
           </div>
           <div class="metric-grid" style="grid-template-columns:1fr 1fr">
             ${metric("Осталось", money(state.summary.remaining))}
-            ${metric("Прогноз", money(state.summary.projected))}
+            ${metric("Прогноз", state.transactions.length ? money(state.summary.projected) : "—", state.transactions.length ? "" : "Появится после первой операции")}
           </div>
           <div style="height:16px"></div>
           ${renderCategoryList(state.summary.categoryTotals.slice(0, 5))}
@@ -565,7 +566,6 @@ function renderInsights() {
             <p>${escapeHtml(primary.body)}</p>
             ${primary.detail ? `<small>${escapeHtml(primary.detail)}</small>` : ""}
           </div>
-          <button class="ghost-button" data-view-link="${primary.tone === "neutral" ? "quick" : "history"}">${escapeHtml(primary.action)}</button>
         </article>
         <section class="panel advice-plan">
           <div class="panel-header">
@@ -694,6 +694,18 @@ function renderWeekPulse(stats) {
   const deltaText = stats.previousSpent > 0
     ? `${delta > 0 ? "+" : delta < 0 ? "−" : ""}${money(Math.abs(delta))}`
     : "";
+
+  if (stats.weekSpent <= 0) {
+    return `
+    <section class="week-pulse empty-week" aria-label="Динамика расходов за неделю">
+      <div class="week-empty-state">
+        <span></span>
+        <strong>Нет операций</strong>
+        <p>Добавьте первую трату, чтобы увидеть динамику за этот период.</p>
+      </div>
+    </section>
+  `;
+  }
 
   return `
     <section class="week-pulse" aria-label="Динамика расходов за неделю">
@@ -1186,8 +1198,8 @@ function scheduledOutsideSelectedWeek(transactions) {
   });
 }
 
-function metric(label, value) {
-  return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+function metric(label, value, hint = "") {
+  return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${hint ? `<small>${escapeHtml(hint)}</small>` : ""}</div>`;
 }
 
 function statusCopy(status, archived = false) {

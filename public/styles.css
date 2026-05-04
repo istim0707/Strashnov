@@ -805,6 +805,14 @@ h1 {
   white-space: nowrap;
 }
 
+.metric small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .panel {
   padding: 18px;
 }
@@ -1292,6 +1300,36 @@ h1 {
   min-height: 118px;
 }
 
+.week-empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 118px;
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-align: center;
+}
+
+.week-empty-state span {
+  width: min(220px, 70%);
+  height: 1px;
+  margin-bottom: 6px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.week-empty-state strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.week-empty-state p {
+  max-width: 300px;
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .week-bar {
   display: grid;
   gap: 7px;
@@ -1458,7 +1496,7 @@ h1 {
 
 .insight-card.primary {
   min-height: 260px;
-  align-content: space-between;
+  align-content: start;
   gap: 20px;
   background: #101214;
   color: #fff;
