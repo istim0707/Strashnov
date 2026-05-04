@@ -671,9 +671,13 @@ async function submitQuick(event) {
       body: JSON.stringify(payload)
     });
     lastResult = result;
-    await loadState();
+    state.transactions = [result.transaction, ...state.transactions]
+      .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
+    state.summary = result.summary;
+    state.insights = result.insights;
     activeView = "quick";
     location.hash = "quick";
+    render();
     toast("Добавлено", `${result.transaction.title} · ${money(result.transaction.amount)}`);
   } catch (error) {
     toast("Не добавлено", error.message);
