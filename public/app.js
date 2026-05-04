@@ -170,6 +170,8 @@ function render() {
 }
 
 function renderTopbar() {
+  const dashboardSummary = activeView === "dashboard" ? getDashboardSummary() : null;
+  const showTopAdd = activeView !== "quick" && !(activeView === "dashboard" && dashboardSummary?.isCurrentMonth && dashboardSummary.status === "over");
   const copy = {
     dashboard: {
       eyebrow: "Обзор",
@@ -201,7 +203,7 @@ function renderTopbar() {
         <p class="topbar-subtitle">${escapeHtml(copy.subtitle)}</p>
       </div>
       <div class="topbar-actions">
-        ${activeView !== "quick" ? `<button class="primary-button" data-view-link="quick" title="Добавить транзакцию">${icon("quick")} Добавить</button>` : ""}
+        ${showTopAdd ? `<button class="primary-button" data-view-link="quick" title="Добавить транзакцию">${icon("quick")} Добавить</button>` : ""}
         <button class="ghost-button" data-logout type="button">Выйти</button>
       </div>
     </header>
@@ -230,12 +232,12 @@ function renderDashboard() {
   const summary = getDashboardSummary();
   const statusMeta = statusCopy(summary.status, !summary.isCurrentMonth);
   const ratio = Math.min(summary.budgetRatio, 1.18);
-  const gauge = Math.min(summary.budgetRatio, 1);
   const daysLeftValue = summary.isCurrentMonth ? String(summary.daysLeft) : "Архив";
   return `
     <section class="view">
       <div class="dashboard-grid">
         <div>
+          ${renderForecastBanner(summary)}
           <section class="hero-panel">
             <div class="decision-copy">
               <div>
@@ -250,12 +252,7 @@ function renderDashboard() {
                 <div class="runway-labels"><span>${money(summary.spent)} потрачено</span><span>${money(summary.budget)} бюджет</span></div>
               </div>
             </div>
-            <div class="gauge" style="--gauge:${gauge * 100}%;--gauge-color:${summary.status === "over" ? "var(--red)" : summary.status === "watch" ? "var(--amber)" : "var(--green)"}">
-              <div class="gauge-core">
-                <strong>${Math.round(summary.budgetRatio * 100)}%</strong>
-                <span>месячного бюджета</span>
-              </div>
-            </div>
+            ${renderBudgetMeter(summary)}
           </section>
           <div class="metric-grid">
             ${metric("Прогноз", money(summary.projected))}
@@ -276,6 +273,38 @@ function renderDashboard() {
         </section>
       </div>
     </section>
+  `;
+}
+
+function renderForecastBanner(summary) {
+  if (!summary.isCurrentMonth || summary.status !== "over") return "";
+  const overspend = Math.max(0, summary.projected - summary.budget);
+  const overPercent = Math.max(1, Math.round((summary.projectedRatio - 1) * 100));
+  return `
+    <aside class="forecast-banner">
+      <div>
+        <span>Нужно действие</span>
+        <strong>Прогноз выше бюджета на ${money(overspend)}</strong>
+        <p>Текущий темп ведёт к перерасходу на ${overPercent}%. Найдите одну категорию, где проще всего срезать расходы уже сейчас.</p>
+      </div>
+      <button class="primary-button" data-view-link="insights" type="button">Посмотреть, где срезать</button>
+    </aside>
+  `;
+}
+
+function renderBudgetMeter(summary) {
+  const forecastPercent = Math.round(summary.projectedRatio * 100);
+  const spentPercent = Math.round(summary.budgetRatio * 100);
+  const marker = Math.min(100, Math.max(0, summary.projectedRatio * 100));
+  return `
+    <div class="budget-meter ${summary.status}" style="--marker:${marker}%">
+      <span>Темп месяца</span>
+      <strong>${forecastPercent}%</strong>
+      <p>прогноз к бюджету</p>
+      <div class="zone-track" aria-hidden="true"><i></i></div>
+      <div class="zone-labels"><span>0</span><span>60</span><span>80</span><span>100%</span></div>
+      <small>Сейчас потрачено ${spentPercent}% бюджета</small>
+    </div>
   `;
 }
 
