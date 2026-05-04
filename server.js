@@ -580,6 +580,10 @@ function categoryTotalsFor(transactions, categories = CATEGORIES) {
 function buildInsights(store, summary) {
   const insights = [];
   const top = summary.categoryTotals[0];
+  const variableCategories = ["food", "groceries", "delivery", "transport", "shopping"];
+  const variableTop = summary.categoryTotals.find((category) => variableCategories.includes(category.id));
+  const other = summary.categoryTotals.find((category) => category.id === "other");
+
   if (summary.projected > summary.budget && summary.budget > 0) {
     const monthlyGap = summary.projected - summary.budget;
     const dailyCorrection = roundMoney(monthlyGap / Math.max(1, summary.daysLeft || 1));
@@ -588,7 +592,9 @@ function buildInsights(store, summary) {
       title: `Снизить темп на ${formatRub(dailyCorrection)} в день`,
       body: `Текущий прогноз: ${formatRub(summary.projected)} при бюджете ${formatRub(summary.budget)}. Самый быстрый рычаг - ограничить переменные расходы до конца месяца.`,
       action: "Держать дневной лимит",
-      metric: `${Math.round(summary.projectedRatio * 100)}%`
+      metric: `${Math.round(summary.projectedRatio * 100)}%`,
+      detail: `Ориентир на сегодня: не больше ${formatRub(summary.dailySafeSpend)}. Все, что выше, увеличит перерасход.`,
+      impact: formatRub(monthlyGap)
     });
   } else {
     insights.push({
@@ -596,7 +602,21 @@ function buildInsights(store, summary) {
       title: `Можно тратить до ${formatRub(summary.dailySafeSpend)} в день`,
       body: `Финальный прогноз сейчас ${formatRub(summary.projected)}. При таком темпе месяц закрывается внутри бюджета.`,
       action: "Сохранить темп",
-      metric: `${Math.round(summary.projectedRatio * 100)}%`
+      metric: `${Math.round(summary.projectedRatio * 100)}%`,
+      detail: `Запас до бюджета: ${formatRub(Math.max(0, summary.budget - summary.projected))}. Не тратьте его на мелкие импульсные покупки.`,
+      impact: formatRub(summary.remaining)
+    });
+  }
+
+  if (summary.future.transactionCount > 0) {
+    insights.push({
+      tone: summary.future.spent > summary.dailySafeSpend * 2 ? "warn" : "neutral",
+      title: "Будущие списания уже давят на прогноз",
+      body: `Запланировано ${summary.future.transactionCount} операций на ${formatRub(summary.future.spent)}. Проверьте, останется ли дневной лимит положительным после этих списаний.`,
+      action: "Проверить будущие",
+      metric: formatRub(summary.future.spent),
+      detail: "Если это обязательные платежи, лучше считать их уже потраченными.",
+      impact: `${summary.future.transactionCount} шт.`
     });
   }
 
@@ -609,7 +629,33 @@ function buildInsights(store, summary) {
         ? `Это главный драйвер недели. Сокращение этой категории на 15% освободит примерно ${formatRub(top.total * 0.15)}.`
         : `Категория выглядит контролируемо, но она все еще первая по сумме: ${formatRub(top.total)}.`,
       action: "Смотреть траты",
-      metric: formatRub(top.total)
+      metric: formatRub(top.total),
+      detail: `Практичный тест: следующие 3 операции в этой категории добавляйте до покупки, а не после.`,
+      impact: formatRub(top.total * 0.15)
+    });
+  }
+
+  if (variableTop && variableTop.total > 0) {
+    insights.push({
+      tone: variableTop.share > 0.28 ? "warn" : "neutral",
+      title: `Поставить мягкий потолок на ${variableTop.label.toLowerCase()}`,
+      body: `Категория гибкая, значит ее проще всего корректировать без боли. Минус 10% даст ${formatRub(variableTop.total * 0.1)} запаса.`,
+      action: "Смотреть операции",
+      metric: `-${formatRub(variableTop.total * 0.1)}`,
+      detail: "Лучше один конкретный лимит на неделю, чем обещание «тратить меньше».",
+      impact: formatRub(variableTop.total)
+    });
+  }
+
+  if (other && other.share > 0.18) {
+    insights.push({
+      tone: "warn",
+      title: "Слишком много уходит в «Другое»",
+      body: `${formatRub(other.total)} не объясняют поведение. Разберите 2-3 операции и создайте отдельные категории, иначе советы будут терять точность.`,
+      action: "Разобрать историю",
+      metric: `${Math.round(other.share * 100)}%`,
+      detail: "Когда «Другое» меньше 10%, картина бюджета становится намного честнее.",
+      impact: formatRub(other.total)
     });
   }
 
@@ -620,7 +666,9 @@ function buildInsights(store, summary) {
       title: "Подписки стали заметной строкой",
       body: `На подписки уже ушло ${formatRub(subscriptions.total)}. Проверьте сервисы, которыми не пользовались последние 30 дней.`,
       action: "Почистить подписки",
-      metric: formatRub(subscriptions.total)
+      metric: formatRub(subscriptions.total),
+      detail: `Даже отмена одной подписки на ${formatRub(subscriptions.total * 0.25)} улучшит прогноз.`,
+      impact: formatRub(subscriptions.total * 0.25)
     });
   }
 
@@ -630,11 +678,13 @@ function buildInsights(store, summary) {
       title: "Данных пока мало",
       body: "Добавьте 3-5 реальных операций за неделю, и Finley начнет давать более точные рекомендации по поведению.",
       action: "Добавить операции",
-      metric: `${summary.week.transactionCount}/5`
+      metric: `${summary.week.transactionCount}/5`,
+      detail: "Минимум для полезных советов: еда, транспорт, дом и один любой регулярный платеж.",
+      impact: "точность"
     });
   }
 
-  return insights.slice(0, 4);
+  return insights.slice(0, 7);
 }
 
 function formatRub(value) {
