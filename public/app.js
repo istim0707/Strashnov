@@ -469,7 +469,7 @@ function renderResult(result) {
         <div class="result-amount ${transaction.type}">${transaction.type === "income" ? "+" : "-"}${money(transaction.amount)}</div>
       </div>
       <div class="parse-grid">
-        <div class="parse-item"><span>Источник</span><strong>${result.ai.used ? "Модель" : "Правила"}</strong></div>
+        <div class="parse-item"><span>Разбор</span><strong>${parseSourceLabel(result)}</strong></div>
         <div class="parse-item"><span>Дата</span><strong>${dateFormatter.format(new Date(transaction.occurredAt))}</strong></div>
         <div class="parse-item"><span>Тип</span><strong>${transaction.type === "income" ? "Доход" : "Расход"}</strong></div>
       </div>
@@ -477,10 +477,15 @@ function renderResult(result) {
   `;
 }
 
+function parseSourceLabel(result) {
+  return result?.ai?.used ? "ИИ-разбор" : "Авторазбор";
+}
+
 function renderHistory() {
   const transactions = filteredTransactions();
   const scheduled = futureTransactions();
   const week = historyWeekSummary();
+  const visibleScheduled = scheduledOutsideSelectedWeek(scheduled);
   const weekTop = week.topCategory;
   return `
     <section class="view">
@@ -519,7 +524,7 @@ function renderHistory() {
             </div>
             <button class="clear-history-button" data-clear-history type="button" ${state.transactions.length ? "" : "disabled"}>${icon("trash")} Очистить историю</button>
           </div>
-          ${scheduled.length && historyFilter === "week" ? renderScheduledBlock(scheduled) : ""}
+          ${visibleScheduled.length && historyFilter === "week" ? renderScheduledBlock(visibleScheduled) : ""}
           ${transactions.length ? `<div class="tx-list">${transactions.map(renderTransaction).join("")}</div>` : `<div class="empty">Операции не найдены</div>`}
         </section>
       </div>
@@ -1164,6 +1169,14 @@ function futureTransactions() {
   return state.transactions
     .filter((transaction) => new Date(transaction.occurredAt) > now)
     .sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
+}
+
+function scheduledOutsideSelectedWeek(transactions) {
+  const { start, end } = historyWeekRange();
+  return transactions.filter((transaction) => {
+    const occurredAt = new Date(transaction.occurredAt);
+    return occurredAt < start || occurredAt >= end;
+  });
 }
 
 function metric(label, value) {
