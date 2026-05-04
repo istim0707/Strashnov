@@ -1224,6 +1224,38 @@ h1 {
   gap: 14px;
 }
 
+.week-switch {
+  display: inline-grid;
+  grid-template-columns: 32px minmax(78px, auto) 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+
+.week-switch button {
+  display: grid;
+  min-width: 0;
+  height: 28px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--ink);
+  background: #fff;
+  cursor: pointer;
+}
+
+.week-switch button:hover {
+  background: #eef2f7;
+}
+
+.week-switch strong {
+  font-size: 13px;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .week-amount {
   font-size: clamp(42px, 7vw, 64px);
   line-height: 1;
@@ -1273,18 +1305,32 @@ h1 {
 }
 
 .week-bar span {
+  display: grid;
+  gap: 2px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 720;
   text-align: center;
+  text-overflow: ellipsis;
+}
+
+.week-bar b {
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.1;
+}
+
+.week-bar small {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .week-facts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
   gap: 8px;
 }
 

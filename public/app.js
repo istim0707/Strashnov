@@ -32,6 +32,7 @@ let state = null;
 let activeView = "dashboard";
 let historyFilter = "week";
 let historySearch = "";
+let historyWeekIndex = currentHistoryWeekIndex();
 let dashboardMonthKey = monthKey(new Date());
 let lastResult = null;
 let toastTimer = null;
@@ -479,19 +480,25 @@ function renderResult(result) {
 function renderHistory() {
   const transactions = filteredTransactions();
   const scheduled = futureTransactions();
-  const weekTop = state.summary.week.topCategory;
+  const week = historyWeekSummary();
+  const weekTop = week.topCategory;
   return `
     <section class="view">
       <div class="history-grid">
         <section class="panel week-hero">
           <div class="panel-header">
             <div>
-              <h2>Прошлые 7 дней</h2>
-              <p>${state.summary.week.transactionCount} операций</p>
+              <h2>История за 7 дней</h2>
+              <p>${escapeHtml(week.label)} · ${week.transactionCount} операций</p>
+            </div>
+            <div class="week-switch" aria-label="Переключить период">
+              <button data-history-week="-1" type="button" title="Предыдущие 7 дней">←</button>
+              <strong>${escapeHtml(week.label)}</strong>
+              <button data-history-week="1" type="button" title="Следующие 7 дней">→</button>
             </div>
           </div>
-          <div class="week-amount">${money(state.summary.week.spent)}</div>
-          ${renderWeekPulse()}
+          <div class="week-amount">${money(week.spent)}</div>
+          ${renderWeekPulse(week)}
           <div class="week-row">
             <span>${weekTop ? "Больше всего ушло в" : "Главная категория"}</span>
             <strong>${weekTop ? escapeHtml(weekTop.label) : "нет данных"}</strong>
@@ -667,15 +674,14 @@ function renderScheduledBlock(transactions) {
   `;
 }
 
-function renderWeekPulse() {
-  const stats = weekPulseStats();
+function renderWeekPulse(stats) {
   const max = Math.max(...stats.days.map((day) => day.total), 1);
   const top = stats.days.reduce((best, day) => (day.total > best.total ? day : best), stats.days[0]);
   const delta = stats.weekSpent - stats.previousSpent;
   const deltaTone = stats.previousSpent === 0 ? "flat" : delta > 0 ? "bad" : delta < 0 ? "good" : "flat";
   const deltaText = stats.previousSpent > 0
     ? `${delta > 0 ? "+" : delta < 0 ? "−" : ""}${money(Math.abs(delta))}`
-    : stats.weekSpent > 0 ? "новая база" : "без трат";
+    : "";
 
   return `
     <section class="week-pulse" aria-label="Динамика расходов за неделю">
@@ -683,25 +689,51 @@ function renderWeekPulse() {
         ${stats.days.map((day) => `
           <div class="week-bar" title="${escapeAttr(day.label)} · ${escapeAttr(money(day.total))}" style="--bar:${Math.max(6, (day.total / max) * 100)}%">
             <i></i>
-            <span>${escapeHtml(day.short)}</span>
+            <span><b>${escapeHtml(day.weekday)}</b><small>${escapeHtml(day.dateLabel)}</small></span>
           </div>
         `).join("")}
       </div>
       <div class="week-facts">
-        <div><span>Средний день</span><strong>${money(stats.average)}</strong></div>
-        <div><span>Пик недели</span><strong>${escapeHtml(top.short)} · ${money(top.total)}</strong></div>
-        <div><span>К прошлой неделе</span><strong class="${deltaTone}">${escapeHtml(deltaText)}</strong></div>
+        <div><span>Средние расходы за день</span><strong>${money(stats.average)}</strong></div>
+        <div><span>Пик недели</span><strong>${escapeHtml(top.weekday)} · ${escapeHtml(top.dateLabel)} · ${money(top.total)}</strong></div>
+        ${deltaText ? `<div><span>К прошлой неделе</span><strong class="${deltaTone}">${escapeHtml(deltaText)}</strong></div>` : ""}
       </div>
     </section>
   `;
 }
 
-function weekPulseStats() {
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  const start = new Date(today);
-  start.setDate(today.getDate() - 6);
-  start.setHours(0, 0, 0, 0);
+function historyWeekSummary() {
+  const { start, end } = historyWeekRange();
+  const rangeTransactions = state.transactions.filter((transaction) => {
+    const occurredAt = new Date(transaction.occurredAt);
+    return occurredAt >= start && occurredAt < end;
+  });
+  const expenses = rangeTransactions.filter((transaction) => transaction.type === "expense");
+  const spent = roundClientMoney(expenses.reduce((sum, transaction) => sum + transaction.amount, 0));
+  const topCategory = state.categories.map((category) => {
+    const total = expenses
+      .filter((transaction) => transaction.category === category.id)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    return {
+      ...category,
+      total: roundClientMoney(total),
+      share: spent ? total / spent : 0
+    };
+  })
+    .filter((category) => category.total > 0)
+    .sort((a, b) => b.total - a.total)[0] || null;
+  const pulse = weekPulseStats(start, end);
+
+  return {
+    ...pulse,
+    label: historyWeekLabel(start, end),
+    spent,
+    transactionCount: rangeTransactions.length,
+    topCategory
+  };
+}
+
+function weekPulseStats(start, end) {
   const previousStart = new Date(start);
   previousStart.setDate(start.getDate() - 7);
   const previousEnd = new Date(start);
@@ -718,7 +750,8 @@ function weekPulseStats() {
       })
       .reduce((sum, transaction) => sum + transaction.amount, 0);
     return {
-      short: weekdayFormatter.format(dayStart).replace(".", ""),
+      weekday: weekdayFormatter.format(dayStart).replace(".", ""),
+      dateLabel: compactDateLabel(dayStart),
       label: dateFormatter.format(dayStart),
       total: roundClientMoney(total)
     };
@@ -892,6 +925,14 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-history-week]").forEach((button) => {
+    button.addEventListener("click", () => {
+      historyWeekIndex += Number(button.dataset.historyWeek || 0);
+      historyFilter = "week";
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-dashboard-month]").forEach((button) => {
     button.addEventListener("click", () => {
       dashboardMonthKey = button.dataset.dashboardMonth;
@@ -937,6 +978,7 @@ async function submitAuth(event) {
     });
     lastResult = null;
     historySearch = "";
+    historyWeekIndex = currentHistoryWeekIndex();
     await loadState();
   } catch (error) {
     toast("Не получилось", error.message);
@@ -1067,6 +1109,7 @@ async function clearHistory() {
     state.insights = result.insights;
     lastResult = null;
     historySearch = "";
+    historyWeekIndex = currentHistoryWeekIndex();
     dashboardMonthKey = monthKey(new Date());
     render();
     toast("История очищена", "Бюджет и категории сохранены");
@@ -1099,12 +1142,13 @@ function filteredTransactions() {
   if (historyFilter === "week") start.setDate(now.getDate() - 6);
   if (historyFilter === "month") start.setDate(1);
   start.setHours(0, 0, 0, 0);
+  const selectedWeek = historyWeekRange();
   const query = historySearch.trim().toLowerCase();
   const transactions = state.transactions.filter((transaction) => {
     const occurredAt = new Date(transaction.occurredAt);
     const inRange = historyFilter === "all"
       || (historyFilter === "future" && occurredAt > now)
-      || (historyFilter === "week" && occurredAt >= start && occurredAt <= now)
+      || (historyFilter === "week" && occurredAt >= selectedWeek.start && occurredAt < selectedWeek.end)
       || (historyFilter === "month" && occurredAt >= start);
     const matches = !query || `${transaction.title} ${transaction.rawText}`.toLowerCase().includes(query);
     return inRange && matches;
@@ -1182,6 +1226,36 @@ function money(value) {
 
 function roundClientMoney(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function currentHistoryWeekIndex(date = new Date()) {
+  return Math.floor((date.getDate() - 1) / 7);
+}
+
+function historyWeekRange() {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), 1 + historyWeekIndex * 7, 0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return { start, end };
+}
+
+function historyWeekLabel(start, end) {
+  const lastDay = new Date(end);
+  lastDay.setDate(end.getDate() - 1);
+  const sameMonth = start.getMonth() === lastDay.getMonth() && start.getFullYear() === lastDay.getFullYear();
+  if (sameMonth) return `${start.getDate()}-${lastDay.getDate()} ${compactMonthLabel(start)}`;
+  return `${compactDateLabel(start)} - ${compactDateLabel(lastDay)}`;
+}
+
+function compactDateLabel(date) {
+  return dateFormatter.format(date).replace(".", "");
+}
+
+function compactMonthLabel(date) {
+  return dateFormatter.formatToParts(date)
+    .find((part) => part.type === "month")?.value
+    .replace(".", "") || date.toLocaleDateString("ru-RU", { month: "short" }).replace(".", "");
 }
 
 function monthKey(date) {
