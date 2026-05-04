@@ -24,6 +24,18 @@ node server.js
 
 Users, sessions, budgets, and transactions are stored in `data/finley.json`. Passwords are stored as `scrypt` hashes with per-user salts, and browser sessions use an HttpOnly cookie.
 
+## Supabase storage
+
+For production, set Supabase variables on the host. When these variables exist, Finley stores users, sessions, categories, and transactions in Supabase instead of `data/finley.json`.
+
+```powershell
+$env:SUPABASE_URL="https://your-project.supabase.co"
+$env:SUPABASE_SECRET_KEY="sb_secret_..."
+node server.js
+```
+
+`SUPABASE_URL` can also include `/rest/v1`; Finley normalizes it automatically. Never commit `SUPABASE_SECRET_KEY` to GitHub.
+
 ## GitHub Pages
 
 GitHub Pages can host only static files. Finley needs `server.js` for profiles, sessions, transactions, and AI categorization, so the full app should be deployed to a Node host such as Render, Railway, Fly.io, or a VPS.

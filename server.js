@@ -144,6 +144,13 @@ async function ensureStore() {
 }
 
 async function readStore() {
+  if (isSupabaseConfigured()) {
+    const store = await readSupabaseStore();
+    const migrated = normalizeStore(store);
+    if (migrated.changed) await writeSupabaseStore(migrated.store);
+    return migrated.store;
+  }
+
   await ensureStore();
   const raw = await fs.readFile(DATA_FILE, "utf8");
   let store = JSON.parse(raw);
@@ -154,8 +161,201 @@ async function readStore() {
 }
 
 async function writeStore(store) {
+  if (isSupabaseConfigured()) {
+    await writeSupabaseStore(store);
+    return;
+  }
+
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(DATA_FILE, JSON.stringify(store, null, 2), "utf8");
+}
+
+function isSupabaseConfigured() {
+  return Boolean(process.env.SUPABASE_URL && supabaseSecretKey());
+}
+
+function supabaseSecretKey() {
+  return process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+}
+
+function supabaseRestBase() {
+  return String(process.env.SUPABASE_URL || "")
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/rest\/v1$/i, "") + "/rest/v1";
+}
+
+async function supabaseRequest(pathname, options = {}) {
+  const response = await fetch(`${supabaseRestBase()}${pathname}`, {
+    ...options,
+    headers: {
+      apikey: supabaseSecretKey(),
+      authorization: `Bearer ${supabaseSecretKey()}`,
+      "content-type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  const text = await response.text();
+  const json = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const message = json?.message || json?.error || text || `Supabase ${response.status}`;
+    throw new Error(message);
+  }
+  return json;
+}
+
+async function readSupabaseStore() {
+  const [users, sessions, categories, transactions] = await Promise.all([
+    supabaseRequest("/users?select=*"),
+    supabaseRequest("/sessions?select=*"),
+    supabaseRequest("/categories?select=*"),
+    supabaseRequest("/transactions?select=*")
+  ]);
+
+  const customByUser = groupBy(categories, "user_id");
+  const transactionsByUser = groupBy(transactions, "user_id");
+
+  return {
+    schemaVersion: 3,
+    sessions: sessions.map(rowToSession),
+    users: users.map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      passwordHash: row.password_hash,
+      passwordSalt: row.password_salt,
+      createdAt: row.created_at,
+      settings: row.settings || defaultSettings(),
+      customCategories: (customByUser.get(row.id) || []).map(rowToCategory),
+      transactions: (transactionsByUser.get(row.id) || []).map(rowToTransaction)
+    }))
+  };
+}
+
+async function writeSupabaseStore(store) {
+  const normalized = normalizeStore(store).store;
+  const userRows = normalized.users.map(userToRow);
+  const sessionRows = normalized.sessions.map(sessionToRow);
+  const categoryRows = normalized.users.flatMap((user) => normalizeCustomCategories(user.customCategories).map((category) => categoryToRow(user.id, category)));
+  const transactionRows = normalized.users.flatMap((user) => user.transactions.map((transaction) => transactionToRow(user.id, transaction)));
+
+  await syncTable("users", userRows);
+  await syncTable("sessions", sessionRows);
+  await syncTable("categories", categoryRows);
+  await syncTable("transactions", transactionRows);
+}
+
+async function syncTable(table, rows) {
+  const existing = await supabaseRequest(`/${table}?select=id`);
+  const desiredIds = new Set(rows.map((row) => String(row.id)));
+  const staleIds = existing.map((row) => String(row.id)).filter((id) => !desiredIds.has(id));
+
+  for (const id of staleIds) {
+    await supabaseRequest(`/${table}?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  if (!rows.length) return;
+  await supabaseRequest(`/${table}?on_conflict=id`, {
+    method: "POST",
+    headers: { prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify(rows)
+  });
+}
+
+function groupBy(rows, key) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    const value = row[key];
+    if (!groups.has(value)) groups.set(value, []);
+    groups.get(value).push(row);
+  }
+  return groups;
+}
+
+function userToRow(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    password_hash: user.passwordHash,
+    password_salt: user.passwordSalt,
+    settings: user.settings || defaultSettings(),
+    created_at: user.createdAt || nowIso()
+  };
+}
+
+function sessionToRow(session) {
+  return {
+    id: session.id,
+    user_id: session.userId,
+    created_at: session.createdAt || nowIso(),
+    expires_at: session.expiresAt
+  };
+}
+
+function categoryToRow(userId, category) {
+  return {
+    id: category.id,
+    user_id: userId,
+    label: category.label,
+    color: category.color,
+    icon: category.icon || "dot",
+    custom: true
+  };
+}
+
+function transactionToRow(userId, transaction) {
+  return {
+    id: transaction.id,
+    user_id: userId,
+    raw_text: transaction.rawText,
+    title: transaction.title,
+    amount: transaction.amount,
+    type: transaction.type,
+    category: transaction.category,
+    vendor: transaction.vendor || "",
+    note: transaction.note || "",
+    occurred_at: transaction.occurredAt,
+    created_at: transaction.createdAt || nowIso(),
+    confidence: transaction.confidence,
+    source: transaction.source
+  };
+}
+
+function rowToSession(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at
+  };
+}
+
+function rowToCategory(row) {
+  return {
+    id: row.id,
+    label: row.label,
+    icon: row.icon || "dot",
+    color: row.color,
+    custom: Boolean(row.custom)
+  };
+}
+
+function rowToTransaction(row) {
+  return {
+    id: row.id,
+    rawText: row.raw_text,
+    title: row.title,
+    amount: roundMoney(row.amount),
+    type: row.type,
+    category: row.category,
+    vendor: row.vendor || "",
+    note: row.note || "",
+    occurredAt: row.occurred_at,
+    createdAt: row.created_at,
+    confidence: Number(row.confidence || 0.74),
+    source: row.source || "local"
+  };
 }
 
 function createEmptyStore() {
