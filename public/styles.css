@@ -367,6 +367,7 @@ button {
 .quick-input:focus,
 .date-input:focus,
 .search-input:focus,
+.history-category-select:focus,
 .tx-select:focus {
   border-color: rgba(15, 159, 122, 0.65);
   box-shadow: 0 0 0 3px rgba(15, 159, 122, 0.12);
@@ -1132,7 +1133,7 @@ h1 {
 
 .history-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 190px) auto;
   gap: 10px;
 }
 
@@ -1196,7 +1197,8 @@ h1 {
   font-size: 12px;
 }
 
-.search-input {
+.search-input,
+.history-category-select {
   width: 100%;
   min-width: 0;
   min-height: 42px;
@@ -1205,6 +1207,12 @@ h1 {
   border-radius: var(--radius);
   background: #fff;
   outline: none;
+}
+
+.history-category-select {
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .segmented {

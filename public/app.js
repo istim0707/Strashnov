@@ -32,6 +32,7 @@ let state = null;
 let activeView = "dashboard";
 let historyFilter = "week";
 let historySearch = "";
+let historyCategory = "all";
 let historyWeekIndex = currentHistoryWeekIndex();
 let dashboardMonthKey = monthKey(new Date());
 let lastResult = null;
@@ -490,6 +491,9 @@ function parseSourceLabel(result) {
 }
 
 function renderHistory() {
+  if (historyCategory !== "all" && !state.categories.some((category) => category.id === historyCategory)) {
+    historyCategory = "all";
+  }
   const transactions = filteredTransactions();
   const scheduled = futureTransactions();
   const week = historyWeekSummary();
@@ -523,6 +527,9 @@ function renderHistory() {
           <div class="history-controls">
             <div class="history-toolbar">
               <input class="search-input" id="history-search" placeholder="Поиск по операциям" value="${escapeAttr(historySearch)}" />
+              <select class="history-category-select" id="history-category" aria-label="Категория операций">
+                ${renderHistoryCategoryOptions()}
+              </select>
               <div class="segmented">
                 <button data-history-filter="week" class="${historyFilter === "week" ? "active" : ""}">Неделя</button>
                 <button data-history-filter="month" class="${historyFilter === "month" ? "active" : ""}">Месяц</button>
@@ -538,6 +545,15 @@ function renderHistory() {
       </div>
     </section>
   `;
+}
+
+function renderHistoryCategoryOptions() {
+  return [
+    `<option value="all"${historyCategory === "all" ? " selected" : ""}>Все категории</option>`,
+    ...state.categories.map((category) => (
+      `<option value="${escapeAttr(category.id)}"${historyCategory === category.id ? " selected" : ""}>${escapeHtml(category.label)}</option>`
+    ))
+  ].join("");
 }
 
 function renderHistoryEmptyState() {
@@ -995,6 +1011,11 @@ function bindEvents() {
     });
   }
 
+  document.querySelector("#history-category")?.addEventListener("change", (event) => {
+    historyCategory = event.target.value;
+    render();
+  });
+
   document.querySelectorAll("[data-delete]").forEach((button) => {
     button.addEventListener("click", () => deleteTransaction(button.dataset.delete));
   });
@@ -1018,6 +1039,7 @@ async function submitAuth(event) {
     });
     lastResult = null;
     historySearch = "";
+    historyCategory = "all";
     historyWeekIndex = currentHistoryWeekIndex();
     await loadState();
   } catch (error) {
@@ -1149,6 +1171,7 @@ async function clearHistory() {
     state.insights = result.insights;
     lastResult = null;
     historySearch = "";
+    historyCategory = "all";
     historyWeekIndex = currentHistoryWeekIndex();
     dashboardMonthKey = monthKey(new Date());
     render();
@@ -1190,8 +1213,11 @@ function filteredTransactions() {
       || (historyFilter === "future" && occurredAt > now)
       || (historyFilter === "week" && occurredAt >= selectedWeek.start && occurredAt < selectedWeek.end)
       || (historyFilter === "month" && occurredAt >= start);
-    const matches = !query || `${transaction.title} ${transaction.rawText}`.toLowerCase().includes(query);
-    return inRange && matches;
+    const category = categoryById(transaction.category);
+    const matchesCategory = historyCategory === "all" || transaction.category === historyCategory;
+    const searchable = `${transaction.title} ${transaction.rawText} ${category?.label || ""} ${transaction.category}`.toLowerCase();
+    const matches = !query || searchable.includes(query);
+    return inRange && matchesCategory && matches;
   });
   if (historyFilter === "future") {
     return transactions.sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
