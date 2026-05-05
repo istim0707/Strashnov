@@ -1383,7 +1383,7 @@ function normalizeClassification(rawText, heuristic, llm, user = null) {
 function classifyByRules(rawText, user = null) {
   const lowered = normalizeKeywordText(rawText);
   const amount = parseAmount(lowered);
-  const type = /(зарплат|получил|получила|доход|преми|возврат|кэшбек|кешбек|перевели|пришло|income|salary|refund)/i.test(lowered)
+  const type = /(зарплат|пенси|пенсион|пособи|стипенди|получил|получила|доход|преми|возврат|кэшбек|кешбек|перевели|пришло|income|salary|pension|benefit|refund)/i.test(lowered)
     ? "income"
     : "expense";
   const category = type === "income" ? "income" : inferCategory(lowered, user);
