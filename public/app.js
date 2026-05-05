@@ -264,7 +264,7 @@ function renderDashboard() {
                 <div class="runway-track">
                   <div class="runway-fill ${spentZone}" style="--fill:${ratio * 100}%"></div>
                 </div>
-                <div class="runway-labels"><span>${money(summary.spent)} потрачено</span><span>${money(summary.budget)} бюджет</span></div>
+                <div class="runway-labels"><span>${runwaySpentLabel(summary)}</span><span>${money(summary.budget)} бюджет</span></div>
               </div>
             </div>
             ${renderBudgetMeter(summary)}
@@ -295,6 +295,13 @@ function budgetRiskZone(ratio) {
   if (ratio > 0.8) return "over";
   if (ratio > 0.6) return "watch";
   return "on-track";
+}
+
+function runwaySpentLabel(summary) {
+  if (Number(summary.scheduledMonthSpent) > 0) {
+    return `${money(summary.spent)} учтено, включая ${money(summary.scheduledMonthSpent)} будущих`;
+  }
+  return `${money(summary.spent)} потрачено`;
 }
 
 function renderForecastBanner(summary) {
@@ -440,6 +447,8 @@ function summarizeMonth(key) {
     baseBudget,
     budget,
     spent,
+    realizedSpent: spent,
+    scheduledMonthSpent: 0,
     income,
     remaining,
     projected: spent,
