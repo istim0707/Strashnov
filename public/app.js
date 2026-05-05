@@ -496,8 +496,9 @@ function renderHistory() {
   }
   const transactions = filteredTransactions();
   const scheduled = futureTransactions();
+  const filteredScheduled = scheduled.filter(matchesHistoryQueryAndCategory);
   const week = historyWeekSummary();
-  const visibleScheduled = scheduledOutsideSelectedWeek(scheduled);
+  const visibleScheduled = scheduledOutsideSelectedWeek(filteredScheduled);
   const weekTop = week.topCategory;
   return `
     <section class="view">
@@ -1206,23 +1207,27 @@ function filteredTransactions() {
   if (historyFilter === "month") start.setDate(1);
   start.setHours(0, 0, 0, 0);
   const selectedWeek = historyWeekRange();
-  const query = historySearch.trim().toLowerCase();
   const transactions = state.transactions.filter((transaction) => {
     const occurredAt = new Date(transaction.occurredAt);
     const inRange = historyFilter === "all"
       || (historyFilter === "future" && occurredAt > now)
       || (historyFilter === "week" && occurredAt >= selectedWeek.start && occurredAt < selectedWeek.end)
       || (historyFilter === "month" && occurredAt >= start);
-    const category = categoryById(transaction.category);
-    const matchesCategory = historyCategory === "all" || transaction.category === historyCategory;
-    const searchable = `${transaction.title} ${transaction.rawText} ${category?.label || ""} ${transaction.category}`.toLowerCase();
-    const matches = !query || searchable.includes(query);
-    return inRange && matchesCategory && matches;
+    return inRange && matchesHistoryQueryAndCategory(transaction);
   });
   if (historyFilter === "future") {
     return transactions.sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
   }
   return transactions;
+}
+
+function matchesHistoryQueryAndCategory(transaction) {
+  const query = historySearch.trim().toLowerCase();
+  const category = categoryById(transaction.category);
+  const matchesCategory = historyCategory === "all" || transaction.category === historyCategory;
+  const searchable = `${transaction.title} ${transaction.rawText} ${category?.label || ""} ${transaction.category}`.toLowerCase();
+  const matches = !query || searchable.includes(query);
+  return matchesCategory && matches;
 }
 
 function futureTransactions() {
