@@ -96,30 +96,65 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function businessToday(now = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+function appDateParts(date = new Date()) {
+  return new Intl.DateTimeFormat("en-US", {
     timeZone: APP_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
-  }).formatToParts(now).reduce((acc, part) => {
+  }).formatToParts(date).reduce((acc, part) => {
     if (part.type !== "literal") acc[part.type] = Number(part.value);
     return acc;
   }, {});
-  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0, 0));
+}
+
+function appDateTimeParts(date) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = Number(part.value);
+    return acc;
+  }, {});
+}
+
+function timeZoneOffsetMs(date) {
+  const parts = appDateTimeParts(date);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return asUtc - date.getTime();
+}
+
+function zonedDateTimeToUtc(year, monthIndex, day, hour = 0, minute = 0, second = 0) {
+  const guess = new Date(Date.UTC(year, monthIndex, day, hour, minute, second, 0));
+  const first = new Date(guess.getTime() - timeZoneOffsetMs(guess));
+  return new Date(guess.getTime() - timeZoneOffsetMs(first));
+}
+
+function businessToday(now = new Date()) {
+  const parts = appDateParts(now);
+  return zonedDateTimeToUtc(parts.year, parts.month - 1, parts.day, 0, 0, 0);
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 86400000);
 }
 
 function dayIso(daysAgo, hour = 12) {
-  const date = new Date();
-  date.setHours(hour, 0, 0, 0);
-  date.setDate(date.getDate() - daysAgo);
-  return date.toISOString();
+  const date = addDays(businessToday(), -daysAgo);
+  return new Date(date.getTime() + hour * 60 * 60 * 1000).toISOString();
 }
 
 function createSeedData() {
   return {
     settings: {
       monthlyBudget: 120000,
+      categoryBudgets: {},
       currency: "RUB",
       locale: "ru-RU"
     },
@@ -301,7 +336,7 @@ function userToRow(user) {
     email: user.email,
     password_hash: user.passwordHash,
     password_salt: user.passwordSalt,
-    settings: user.settings || defaultSettings(),
+    settings: normalizeSettings(user.settings),
     created_at: user.createdAt || nowIso()
   };
 }
@@ -391,8 +426,32 @@ function createEmptyStore() {
 function defaultSettings() {
   return {
     monthlyBudget: 120000,
+    categoryBudgets: {},
     currency: "RUB",
     locale: "ru-RU"
+  };
+}
+
+function sanitizeCategoryBudgets(input, allowedIds = null) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const result = {};
+  for (const [id, value] of Object.entries(source)) {
+    if (allowedIds && !allowedIds.has(id)) continue;
+    const amount = roundMoney(Number(value));
+    if (Number.isFinite(amount) && amount > 0) result[id] = amount;
+  }
+  return result;
+}
+
+function normalizeSettings(settings) {
+  const defaults = defaultSettings();
+  const source = settings && typeof settings === "object" ? settings : {};
+  const monthlyBudget = Number(source.monthlyBudget);
+  return {
+    ...defaults,
+    ...source,
+    monthlyBudget: Number.isFinite(monthlyBudget) && monthlyBudget >= 0 ? roundMoney(monthlyBudget) : defaults.monthlyBudget,
+    categoryBudgets: sanitizeCategoryBudgets(source.categoryBudgets)
   };
 }
 
@@ -438,7 +497,7 @@ function normalizeStore(store) {
       passwordHash: null,
       passwordSalt: null,
       createdAt: nowIso(),
-      settings: store.settings || seed.settings,
+      settings: normalizeSettings(store.settings || seed.settings),
       customCategories: [],
       transactions: Array.isArray(store.transactions) ? store.transactions : seed.transactions
     };
@@ -468,8 +527,9 @@ function normalizeStore(store) {
       user.id = crypto.randomUUID();
       changed = true;
     }
-    if (!user.settings) {
-      user.settings = defaultSettings();
+    const normalizedSettings = normalizeSettings(user.settings);
+    if (JSON.stringify(user.settings || {}) !== JSON.stringify(normalizedSettings)) {
+      user.settings = normalizedSettings;
       changed = true;
     }
     if (!Array.isArray(user.transactions)) {
@@ -486,8 +546,11 @@ function normalizeStore(store) {
 }
 
 function monthRange(anchor = new Date()) {
-  const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
+  const parts = appDateParts(anchor);
+  const start = zonedDateTimeToUtc(parts.year, parts.month - 1, 1, 0, 0, 0);
+  const end = parts.month === 12
+    ? zonedDateTimeToUtc(parts.year + 1, 0, 1, 0, 0, 0)
+    : zonedDateTimeToUtc(parts.year, parts.month, 1, 0, 0, 0);
   return { start, end };
 }
 
@@ -497,10 +560,8 @@ function isInRange(iso, start, end) {
 }
 
 function daysBetween(from, to) {
-  const start = new Date(from);
-  const end = new Date(to);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
+  const start = new Date(from).getTime();
+  const end = new Date(to).getTime();
   return Math.max(1, Math.round((end - start) / 86400000) + 1);
 }
 
@@ -509,12 +570,11 @@ function summarize(store) {
   const { start, end } = monthRange(today);
   const settings = store.settings;
   const categories = categoriesFor(store);
+  const categoryBudgets = sanitizeCategoryBudgets(settings.categoryBudgets, categoryIdsFor(store));
   const monthTransactions = store.transactions.filter((transaction) => isInRange(transaction.occurredAt, start, end));
   const expenses = monthTransactions.filter((transaction) => transaction.type === "expense");
   const incomeItems = monthTransactions.filter((transaction) => transaction.type === "income");
-  const tomorrow = new Date(today);
-  tomorrow.setHours(0, 0, 0, 0);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrow = addDays(today, 1);
   const realizedExpenses = expenses.filter((transaction) => new Date(transaction.occurredAt) < tomorrow);
   const scheduledMonthExpenses = expenses.filter((transaction) => new Date(transaction.occurredAt) >= tomorrow);
   const spent = roundMoney(expenses.reduce((sum, transaction) => sum + transaction.amount, 0));
@@ -538,22 +598,27 @@ function summarize(store) {
     const total = expenses
       .filter((transaction) => transaction.category === category.id)
       .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const categoryBudget = roundMoney(categoryBudgets[category.id] || 0);
+    const categoryBudgetRatio = categoryBudget > 0 ? total / categoryBudget : 0;
     return {
       ...category,
       total: roundMoney(total),
-      share: spent ? total / spent : 0
+      share: spent ? total / spent : 0,
+      budget: categoryBudget,
+      budgetRemaining: categoryBudget > 0 ? roundMoney(categoryBudget - total) : 0,
+      budgetRatio: categoryBudgetRatio,
+      budgetStatus: categoryBudgetRatio > 1 ? "over" : categoryBudgetRatio >= 0.8 ? "watch" : "on-track"
     };
   })
-    .filter((category) => category.total > 0)
-    .sort((a, b) => b.total - a.total);
+    .filter((category) => category.total > 0 || category.budget > 0)
+    .sort((a, b) => (b.total - a.total) || (b.budget - a.budget));
 
-  const weekStart = new Date(today);
-  weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(weekStart.getDate() - 6);
+  const weekStart = addDays(today, -6);
+  const weekEnd = addDays(today, 1);
   const weekExpenses = store.transactions.filter((transaction) => (
     transaction.type === "expense"
     && new Date(transaction.occurredAt) >= weekStart
-    && new Date(transaction.occurredAt) <= today
+    && new Date(transaction.occurredAt) < weekEnd
   ));
   const weekSpent = roundMoney(weekExpenses.reduce((sum, transaction) => sum + transaction.amount, 0));
   const topWeekCategory = categoryTotalsFor(weekExpenses, categories)[0] || null;
@@ -564,7 +629,7 @@ function summarize(store) {
 
   return {
     currency: settings.currency || "RUB",
-    monthLabel: today.toLocaleDateString(settings.locale || "ru-RU", { month: "long", year: "numeric" }),
+    monthLabel: today.toLocaleDateString(settings.locale || "ru-RU", { month: "long", year: "numeric", timeZone: APP_TIME_ZONE }),
     baseBudget,
     budget,
     spent,
@@ -615,6 +680,33 @@ function buildInsights(store, summary) {
   const variableCategories = ["food", "groceries", "delivery", "transport", "shopping"];
   const variableTop = summary.categoryTotals.find((category) => variableCategories.includes(category.id));
   const other = summary.categoryTotals.find((category) => category.id === "other");
+  const budgetedCategories = summary.categoryTotals
+    .filter((category) => category.budget > 0)
+    .sort((a, b) => b.budgetRatio - a.budgetRatio);
+  const overBudgetCategory = budgetedCategories.find((category) => category.budgetRatio > 1);
+  const nearBudgetCategory = budgetedCategories.find((category) => category.budgetRatio >= 0.8 && category.budgetRatio <= 1);
+
+  if (overBudgetCategory) {
+    insights.push({
+      tone: "danger",
+      title: `${overBudgetCategory.label} выше лимита на ${formatRub(Math.abs(overBudgetCategory.budgetRemaining))}`,
+      body: `Лимит категории: ${formatRub(overBudgetCategory.budget)}. Уже потрачено ${formatRub(overBudgetCategory.total)}, поэтому новые траты здесь сразу давят на общий бюджет.`,
+      action: "Смотреть операции",
+      metric: `${Math.round(overBudgetCategory.budgetRatio * 100)}%`,
+      detail: "Это самый точный сигнал для поведения: режьте не весь месяц сразу, а конкретную категорию с превышением.",
+      impact: formatRub(Math.abs(overBudgetCategory.budgetRemaining))
+    });
+  } else if (nearBudgetCategory) {
+    insights.push({
+      tone: "warn",
+      title: `${nearBudgetCategory.label} близко к лимиту`,
+      body: `Лимит ${formatRub(nearBudgetCategory.budget)}, осталось ${formatRub(Math.max(0, nearBudgetCategory.budgetRemaining))}. Проверьте следующую покупку в этой категории до оплаты.`,
+      action: "Смотреть операции",
+      metric: `${Math.round(nearBudgetCategory.budgetRatio * 100)}%`,
+      detail: "Категорийный лимит помогает поймать проблему раньше, чем общий месячный бюджет станет красным.",
+      impact: formatRub(nearBudgetCategory.budgetRemaining)
+    });
+  }
 
   if (summary.projected > summary.budget && summary.budget > 0) {
     const monthlyGap = summary.projected - summary.budget;
@@ -1027,12 +1119,29 @@ async function apiUpdateSettings(req, res) {
   const context = await requireAuth(req, res);
   if (!context) return;
   const body = await readJson(req);
-  const monthlyBudget = Number(body.monthlyBudget);
-  if (!Number.isFinite(monthlyBudget) || monthlyBudget < 0) {
-    return responseError(res, 422, "Бюджет должен быть числом.");
+
+  context.user.settings = normalizeSettings(context.user.settings);
+
+  if (body.monthlyBudget !== undefined) {
+    const monthlyBudget = Number(body.monthlyBudget);
+    if (!Number.isFinite(monthlyBudget) || monthlyBudget < 0) {
+      return responseError(res, 422, "Бюджет должен быть числом.");
+    }
+    context.user.settings.monthlyBudget = roundMoney(monthlyBudget);
   }
 
-  context.user.settings.monthlyBudget = roundMoney(monthlyBudget);
+  if (body.categoryBudgets !== undefined) {
+    context.user.settings.categoryBudgets = sanitizeCategoryBudgets(
+      body.categoryBudgets,
+      categoryIdsFor(context.user)
+    );
+  }
+
+  context.user.settings.categoryBudgets = sanitizeCategoryBudgets(
+    context.user.settings.categoryBudgets,
+    categoryIdsFor(context.user)
+  );
+
   await writeStore(context.store);
   const summary = summarize(context.user);
   responseJson(res, 200, {
@@ -1088,12 +1197,16 @@ async function apiDeleteCategory(req, res, id) {
   for (const transaction of context.user.transactions) {
     if (transaction.category === id) transaction.category = "other";
   }
+  if (context.user.settings?.categoryBudgets) {
+    delete context.user.settings.categoryBudgets[id];
+  }
 
   await writeStore(context.store);
   const summary = summarize(context.user);
   responseJson(res, 200, {
     ok: true,
     categories: categoriesFor(context.user),
+    settings: context.user.settings,
     summary,
     insights: buildInsights(context.user, summary),
     transactions: context.user.transactions
@@ -1219,7 +1332,8 @@ function llmSystemPrompt() {
 
 function llmUserPrompt(rawText, heuristic) {
   return JSON.stringify({
-    today: new Date().toISOString(),
+    today: businessToday().toISOString(),
+    timeZone: APP_TIME_ZONE,
     phrase: rawText,
     ruleGuess: heuristic
   });
@@ -1385,16 +1499,16 @@ function parseExplicitDate(text) {
   if (!Number.isInteger(day) || month === undefined || day < 1 || day > 31) return null;
 
   const now = new Date();
-  let year = match[3] ? Number(match[3]) : now.getFullYear();
-  const date = new Date(year, month, day, 12, 0, 0, 0);
-  if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null;
+  const nowParts = appDateParts(now);
+  let year = match[3] ? Number(match[3]) : nowParts.year;
+  let date = zonedDateTimeToUtc(year, month, day, 12, 0, 0);
+  const parsedParts = appDateParts(date);
+  if (parsedParts.year !== year || parsedParts.month !== month + 1 || parsedParts.day !== day) return null;
 
   if (!match[3]) {
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    if (date < today) {
+    if (date < businessToday(now)) {
       year += 1;
-      date.setFullYear(year);
+      date = zonedDateTimeToUtc(year, month, day, 12, 0, 0);
     }
   }
 
@@ -1405,15 +1519,26 @@ function inferDate(lowered) {
   const explicit = parseExplicitDate(lowered);
   if (explicit) return explicit;
 
-  const date = new Date();
-  if (lowered.includes("позавчера")) date.setDate(date.getDate() - 2);
-  else if (lowered.includes("вчера")) date.setDate(date.getDate() - 1);
-  else if (lowered.includes("завтра")) date.setDate(date.getDate() + 1);
-  return date.toISOString();
+  let offset = 0;
+  if (lowered.includes("позавчера")) offset = -2;
+  else if (lowered.includes("вчера")) offset = -1;
+  else if (lowered.includes("завтра")) offset = 1;
+  const dayStart = addDays(businessToday(), offset);
+  return new Date(dayStart.getTime() + 12 * 60 * 60 * 1000).toISOString();
 }
 
 function normalizeDate(value) {
   if (!value || typeof value !== "string") return null;
+  const dayOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dayOnly) {
+    const year = Number(dayOnly[1]);
+    const month = Number(dayOnly[2]);
+    const day = Number(dayOnly[3]);
+    const date = zonedDateTimeToUtc(year, month - 1, day, 12, 0, 0);
+    const parts = appDateParts(date);
+    if (parts.year !== year || parts.month !== month || parts.day !== day) return null;
+    return date.toISOString();
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
