@@ -593,7 +593,7 @@ function summarize(store) {
   const budgetRatio = budget > 0 ? spent / budget : 0;
   const projectedRatio = budget > 0 ? projected / budget : 0;
   const minimumForecastExpenses = 3;
-  const forecastExpenseCount = realizedExpenses.length;
+  const forecastExpenseCount = expenses.length;
   const forecastReady = forecastExpenseCount >= minimumForecastExpenses || spent > budget;
   const projectedStatus = projectedRatio > 1.05 ? "over" : projectedRatio > 0.92 ? "watch" : "on-track";
   const status = forecastReady ? projectedStatus : "learning";
@@ -637,6 +637,8 @@ function summarize(store) {
     baseBudget,
     budget,
     spent,
+    realizedSpent,
+    scheduledMonthSpent,
     income,
     remaining,
     projected,
@@ -1438,8 +1440,14 @@ function explicitDateRegex(flags = "iu") {
   return new RegExp(`(?:^|\\s)(\\d{1,2})\\s+(${MONTH_PATTERN})(?:\\s+(\\d{4}))?(?=\\s|$|[.,])`, flags);
 }
 
+function dayOfMonthDateRegex(flags = "iu") {
+  return new RegExp("(?:^|\\s)(\\d{1,2})(?:\\s*-?\\s*(?:го|ого)|\\s+(?:числа|числу|число))(?=\\s|$|[.,])", flags);
+}
+
 function stripExplicitDates(text) {
-  return String(text || "").replace(explicitDateRegex("giu"), " ");
+  return String(text || "")
+    .replace(explicitDateRegex("giu"), " ")
+    .replace(dayOfMonthDateRegex("giu"), " ");
 }
 
 function parseAmount(text) {
@@ -1524,8 +1532,9 @@ function inferTitle(rawText, category, type, user = null) {
 }
 
 function parseExplicitDate(text) {
-  const match = String(text || "").toLowerCase().match(explicitDateRegex());
-  if (!match) return null;
+  const lowered = String(text || "").toLowerCase();
+  const match = lowered.match(explicitDateRegex());
+  if (!match) return parseDayOfMonthDate(lowered);
 
   const day = Number(match[1]);
   const month = MONTH_INDEX.get(match[2]);
@@ -1546,6 +1555,31 @@ function parseExplicitDate(text) {
   }
 
   return date.toISOString();
+}
+
+function parseDayOfMonthDate(text) {
+  const match = String(text || "").toLowerCase().match(dayOfMonthDateRegex());
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+
+  const now = new Date();
+  const today = businessToday(now);
+  const nowParts = appDateParts(now);
+
+  for (let offset = 0; offset < 13; offset += 1) {
+    const monthNumber = nowParts.month - 1 + offset;
+    const year = nowParts.year + Math.floor(monthNumber / 12);
+    const month = ((monthNumber % 12) + 12) % 12;
+    const date = zonedDateTimeToUtc(year, month, day, 12, 0, 0);
+    const parts = appDateParts(date);
+    if (parts.year === year && parts.month === month + 1 && parts.day === day && date >= today) {
+      return date.toISOString();
+    }
+  }
+
+  return null;
 }
 
 function inferDate(lowered) {
