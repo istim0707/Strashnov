@@ -221,6 +221,7 @@ function renderTopbar() {
 
 function dashboardTitle() {
   const summary = getDashboardSummary();
+  if (summary.status === "learning") return "Нужно больше данных";
   if (summary.status === "over") return "Месяц требует коррекции";
   if (summary.status === "watch") return "Бюджет близко к границе";
   return "Вы укладываетесь в бюджет";
@@ -243,6 +244,10 @@ function renderDashboard() {
   const ratio = Math.min(summary.budgetRatio, 1.18);
   const spentZone = budgetRiskZone(summary.budgetRatio);
   const daysLeftValue = summary.isCurrentMonth ? String(summary.daysLeft) : "Архив";
+  const forecastValue = summary.isCurrentMonth && !summary.forecastReady ? "—" : money(summary.projected);
+  const forecastHint = summary.isCurrentMonth && !summary.forecastReady
+    ? `после ${summary.minimumForecastExpenses || 3} трат`
+    : "";
   return `
     <section class="view">
       <div class="dashboard-grid">
@@ -265,7 +270,7 @@ function renderDashboard() {
             ${renderBudgetMeter(summary)}
           </section>
           <div class="metric-grid">
-            ${metric("Прогноз", money(summary.projected))}
+            ${metric("Прогноз", forecastValue, forecastHint)}
             ${metric("Доход", money(summary.income))}
             ${metric("Дневной лимит", money(summary.dailySafeSpend))}
             ${metric(summary.isCurrentMonth ? "Дней осталось" : "Период", daysLeftValue)}
@@ -309,6 +314,21 @@ function renderForecastBanner(summary) {
 }
 
 function renderBudgetMeter(summary) {
+  if (summary.isCurrentMonth && !summary.forecastReady) {
+    const current = summary.forecastExpenseCount || 0;
+    const required = summary.minimumForecastExpenses || 3;
+    const marker = Math.min(100, Math.max(0, summary.budgetRatio * 100));
+    return `
+      <div class="budget-meter learning" style="--marker:${marker}%">
+        <span>Данных для прогноза</span>
+        <strong>${current}/${required}</strong>
+        <p>трат добавлено</p>
+        <div class="zone-track" aria-hidden="true"><i></i></div>
+        <div class="zone-labels"><span>0</span><span>60</span><span>80</span><span>100%</span></div>
+        <small>Прогноз темпа появится после ${required} трат. Пока показываю только фактически потраченные ${Math.round(summary.budgetRatio * 100)}% бюджета.</small>
+      </div>
+    `;
+  }
   const forecastPercent = Math.round(summary.projectedRatio * 100);
   const spentPercent = Math.round(summary.budgetRatio * 100);
   const marker = Math.min(100, Math.max(0, summary.projectedRatio * 100));
@@ -429,6 +449,9 @@ function summarizeMonth(key) {
     daysLeft: 0,
     budgetRatio,
     projectedRatio: budgetRatio,
+    forecastReady: true,
+    forecastExpenseCount: expenses.length,
+    minimumForecastExpenses: 3,
     status,
     categoryTotals,
     isCurrentMonth: key === monthKey(new Date())
@@ -465,7 +488,11 @@ function renderQuick() {
           </div>
           <div class="metric-grid" style="grid-template-columns:1fr 1fr">
             ${metric("Осталось", money(state.summary.remaining))}
-            ${metric("Прогноз", state.transactions.length ? money(state.summary.projected) : "—", state.transactions.length ? "" : "Появится после первой операции")}
+            ${metric(
+              "Прогноз",
+              state.summary.forecastReady ? money(state.summary.projected) : "—",
+              state.summary.forecastReady ? "" : `Появится после ${state.summary.minimumForecastExpenses || 3} трат`
+            )}
           </div>
           <div style="height:16px"></div>
           ${renderCategoryList(state.summary.categoryTotals.slice(0, 5))}
@@ -1340,6 +1367,12 @@ function statusCopy(status, archived = false) {
     return {
       label: "Месяц закрыт в бюджете",
       body: "Архив сохранён: можно сравнивать прошлые траты с текущим месяцем."
+    };
+  }
+  if (status === "learning") {
+    return {
+      label: "Нужно больше данных",
+      body: "Сделайте минимум 3 траты для расчёта темпа. Пока Finley показывает факт, но не делает жёсткий прогноз по одной операции."
     };
   }
   if (status === "over") {

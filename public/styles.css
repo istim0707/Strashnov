@@ -695,6 +695,11 @@ h1 {
   background: var(--red-soft);
 }
 
+.status-pill.learning {
+  color: #255b78;
+  background: #e8f3fb;
+}
+
 .hero-metric {
   margin-top: 8px;
   font-size: clamp(46px, 8vw, 76px);
@@ -796,6 +801,10 @@ h1 {
 
 .budget-meter.on-track strong {
   color: #0f7a5f;
+}
+
+.budget-meter.learning strong {
+  color: #255b78;
 }
 
 .zone-track {
