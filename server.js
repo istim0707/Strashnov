@@ -1257,7 +1257,7 @@ async function classifyTransaction(rawText, user = null) {
       ...normalized,
       occurredAt: explicitOccurredAt || normalized.occurredAt,
       source: "llm",
-      ai: { provider: "Pollinations GPT", used: true }
+      ai: { provider: llmProviderName(), used: true }
     };
   } catch (error) {
     return {
@@ -1270,13 +1270,22 @@ async function classifyTransaction(rawText, user = null) {
 }
 
 function shouldUseLLM(heuristic) {
-  if (process.env.FINLEY_LLM_MODE === "always") return true;
+  if (process.env.FINLEY_LLM_MODE === "always") return hasLLMProvider();
   if (process.env.FINLEY_LLM_MODE === "off") return false;
-  if (!process.env.OPENAI_API_KEY && process.env.FINLEY_USE_POLLINATIONS !== "true") return false;
+  if (!hasLLMProvider()) return false;
   if (!heuristic.amount) return true;
   if (heuristic.type === "income") return false;
   if (heuristic.category && heuristic.category !== "other") return false;
   return true;
+}
+
+function hasLLMProvider() {
+  if (process.env.OPENAI_API_KEY) return true;
+  return process.env.FINLEY_USE_POLLINATIONS !== "false";
+}
+
+function llmProviderName() {
+  return process.env.OPENAI_API_KEY ? "OpenAI" : "Pollinations GPT";
 }
 
 async function classifyByLLM(rawText, heuristic) {
