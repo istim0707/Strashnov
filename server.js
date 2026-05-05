@@ -592,7 +592,11 @@ function summarize(store) {
   const dailySafeSpend = roundMoney(remaining > 0 ? remaining / Math.max(1, daysLeft || 1) : 0);
   const budgetRatio = budget > 0 ? spent / budget : 0;
   const projectedRatio = budget > 0 ? projected / budget : 0;
-  const status = projectedRatio > 1.05 ? "over" : projectedRatio > 0.92 ? "watch" : "on-track";
+  const minimumForecastExpenses = 3;
+  const forecastExpenseCount = realizedExpenses.length;
+  const forecastReady = forecastExpenseCount >= minimumForecastExpenses || spent > budget;
+  const projectedStatus = projectedRatio > 1.05 ? "over" : projectedRatio > 0.92 ? "watch" : "on-track";
+  const status = forecastReady ? projectedStatus : "learning";
 
   const categoryTotals = categories.map((category) => {
     const total = expenses
@@ -642,6 +646,9 @@ function summarize(store) {
     daysLeft,
     budgetRatio,
     projectedRatio,
+    forecastReady,
+    forecastExpenseCount,
+    minimumForecastExpenses,
     status,
     categoryTotals,
     week: {
@@ -685,6 +692,23 @@ function buildInsights(store, summary) {
     .sort((a, b) => b.budgetRatio - a.budgetRatio);
   const overBudgetCategory = budgetedCategories.find((category) => category.budgetRatio > 1);
   const nearBudgetCategory = budgetedCategories.find((category) => category.budgetRatio >= 0.8 && category.budgetRatio <= 1);
+
+  if (!summary.forecastReady) {
+    const currentCount = summary.forecastExpenseCount || 0;
+    const missingCount = Math.max(0, (summary.minimumForecastExpenses || 3) - currentCount);
+    insights.push({
+      tone: "neutral",
+      title: "Нужно минимум 3 траты для расчёта",
+      body: `Сейчас есть ${currentCount} из ${summary.minimumForecastExpenses || 3}. Finley не будет подсвечивать перерасход по темпу, пока выборка слишком маленькая.`,
+      action: "Добавить трату",
+      metric: `${currentCount}/${summary.minimumForecastExpenses || 3}`,
+      detail: missingCount > 0
+        ? `Добавьте ещё ${missingCount} операции: например еду, транспорт и один регулярный платёж.`
+        : "После следующей операции прогноз станет увереннее.",
+      impact: "точность"
+    });
+    return insights;
+  }
 
   if (overBudgetCategory) {
     insights.push({
