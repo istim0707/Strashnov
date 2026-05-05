@@ -248,6 +248,7 @@ function renderDashboard() {
   const forecastHint = summary.isCurrentMonth && !summary.forecastReady
     ? `после ${summary.minimumForecastExpenses || 3} трат`
     : "";
+  const upcoming = dashboardFutureExpenses(summary);
   return `
     <section class="view">
       <div class="dashboard-grid">
@@ -285,6 +286,7 @@ function renderDashboard() {
           </div>
           ${renderMonthArchive(months)}
           ${summary.categoryTotals.length ? renderCategoryList(summary.categoryTotals) : `<div class="empty small">В этом месяце расходов не было</div>`}
+          ${renderDashboardFuture(upcoming)}
         </section>
       </div>
     </section>
@@ -302,6 +304,51 @@ function runwaySpentLabel(summary) {
     return `${money(summary.spent)} учтено, включая ${money(summary.scheduledMonthSpent)} будущих`;
   }
   return `${money(summary.spent)} потрачено`;
+}
+
+function dashboardFutureExpenses(summary) {
+  if (!summary.isCurrentMonth) return [];
+  const { start, end } = monthBounds(dashboardMonthKey);
+  return futureTransactions()
+    .filter((transaction) => (
+      transaction.type === "expense"
+      && new Date(transaction.occurredAt) >= start
+      && new Date(transaction.occurredAt) < end
+    ));
+}
+
+function renderDashboardFuture(transactions) {
+  if (!transactions.length) return "";
+  const total = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  return `
+    <section class="upcoming-card">
+      <div class="upcoming-head">
+        <div>
+          <span>Ближайшие списания</span>
+          <strong>${money(total)}</strong>
+        </div>
+        <button class="ghost-button compact" data-open-future type="button">Открыть</button>
+      </div>
+      <div class="upcoming-list">
+        ${transactions.slice(0, 3).map(renderUpcomingExpense).join("")}
+      </div>
+      ${transactions.length > 3 ? `<p>Ещё ${transactions.length - 3} операций в истории</p>` : ""}
+    </section>
+  `;
+}
+
+function renderUpcomingExpense(transaction) {
+  const category = categoryById(transaction.category);
+  return `
+    <article class="upcoming-row" style="--cat:${category.color}">
+      <div class="cat-icon" style="--cat:${category.color}">${icon(category.icon)}</div>
+      <div>
+        <strong>${escapeHtml(transaction.title)}</strong>
+        <span>${dateFormatter.format(new Date(transaction.occurredAt))} · ${escapeHtml(category.label)}</span>
+      </div>
+      <b>${money(transaction.amount)}</b>
+    </article>
+  `;
 }
 
 function renderForecastBanner(summary) {
@@ -377,7 +424,29 @@ function getDashboardSummary() {
     availableKeys.add(monthKey(new Date(transaction.occurredAt)));
   }
   if (!availableKeys.has(dashboardMonthKey)) dashboardMonthKey = currentKey;
-  return dashboardMonthKey === currentKey ? { ...state.summary, isCurrentMonth: true } : summarizeMonth(dashboardMonthKey);
+  if (dashboardMonthKey !== currentKey) return summarizeMonth(dashboardMonthKey);
+  const summary = { ...state.summary, isCurrentMonth: true };
+  return applyClientForecastSample(summary, currentKey);
+}
+
+function applyClientForecastSample(summary, key) {
+  const { start, end } = monthBounds(key);
+  const expenses = state.transactions.filter((transaction) => (
+    transaction.type === "expense"
+    && new Date(transaction.occurredAt) >= start
+    && new Date(transaction.occurredAt) < end
+  ));
+  const required = summary.minimumForecastExpenses || 3;
+  const count = expenses.length;
+  const ready = count >= required || summary.spent > summary.budget;
+  const projectedStatus = summary.projectedRatio > 1.05 ? "over" : summary.projectedRatio > 0.92 ? "watch" : "on-track";
+  return {
+    ...summary,
+    forecastExpenseCount: count,
+    minimumForecastExpenses: required,
+    forecastReady: ready,
+    status: ready ? (summary.status === "learning" ? projectedStatus : summary.status) : "learning"
+  };
 }
 
 function monthArchive() {
@@ -1085,6 +1154,13 @@ function bindEvents() {
   });
 
   document.querySelector("[data-clear-history]")?.addEventListener("click", clearHistory);
+
+  document.querySelectorAll("[data-open-future]").forEach((button) => {
+    button.addEventListener("click", () => {
+      historyFilter = "future";
+      location.hash = "history";
+    });
+  });
 
   const search = document.querySelector("#history-search");
   if (search) {
