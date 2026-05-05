@@ -1,4 +1,5 @@
 const app = document.querySelector("#app");
+const APP_TIME_ZONE = "Europe/Moscow";
 
 const views = [
   { id: "dashboard", label: "Обзор", short: "Бюджет" },
@@ -47,11 +48,13 @@ const formatter = new Intl.NumberFormat("ru-RU", {
 
 const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
   day: "numeric",
-  month: "short"
+  month: "short",
+  timeZone: APP_TIME_ZONE
 });
 
 const weekdayFormatter = new Intl.DateTimeFormat("ru-RU", {
-  weekday: "short"
+  weekday: "short",
+  timeZone: APP_TIME_ZONE
 });
 
 init();
@@ -337,10 +340,11 @@ function renderMonthArchive(months) {
 
 function getDashboardSummary() {
   const today = new Date();
+  const todayParts = appDateParts(today);
   const currentKey = monthKey(today);
   const availableKeys = new Set();
   for (let offset = 0; offset < 6; offset += 1) {
-    availableKeys.add(monthKey(new Date(today.getFullYear(), today.getMonth() - offset, 1)));
+    availableKeys.add(monthKey(zonedDateTimeToUtc(todayParts.year, todayParts.month - 1 - offset, 1, 12, 0, 0)));
   }
   for (const transaction of state.transactions) {
     availableKeys.add(monthKey(new Date(transaction.occurredAt)));
@@ -351,9 +355,10 @@ function getDashboardSummary() {
 
 function monthArchive() {
   const today = new Date();
+  const todayParts = appDateParts(today);
   const keys = new Set();
   for (let offset = 0; offset < 6; offset += 1) {
-    keys.add(monthKey(new Date(today.getFullYear(), today.getMonth() - offset, 1)));
+    keys.add(monthKey(zonedDateTimeToUtc(todayParts.year, todayParts.month - 1 - offset, 1, 12, 0, 0)));
   }
   for (const transaction of state.transactions) {
     keys.add(monthKey(new Date(transaction.occurredAt)));
@@ -394,14 +399,20 @@ function summarizeMonth(key) {
     const total = expenses
       .filter((transaction) => transaction.category === category.id)
       .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const budget = categoryBudgetFor(category.id);
+    const budgetRatio = budget > 0 ? total / budget : 0;
     return {
       ...category,
       total: roundClientMoney(total),
-      share: spent ? total / spent : 0
+      share: spent ? total / spent : 0,
+      budget,
+      budgetRemaining: budget > 0 ? roundClientMoney(budget - total) : 0,
+      budgetRatio,
+      budgetStatus: budgetRatio > 1 ? "over" : budgetRatio >= 0.8 ? "watch" : "on-track"
     };
   })
-    .filter((category) => category.total > 0)
-    .sort((a, b) => b.total - a.total);
+    .filter((category) => category.total > 0 || category.budget > 0)
+    .sort((a, b) => (b.total - a.total) || (b.budget - a.budget));
 
   return {
     ...state.summary,
@@ -459,6 +470,7 @@ function renderQuick() {
           <div style="height:16px"></div>
           ${renderCategoryList(state.summary.categoryTotals.slice(0, 5))}
           ${renderCategoryManager()}
+          ${renderCategoryLimitEditor()}
         </section>
       </div>
     </section>
@@ -664,8 +676,13 @@ function renderAdviceItem(insight) {
 }
 
 function renderRiskCategory(category) {
-  const share = Math.round(category.share * 100);
+  const hasLimit = Number(category.budget) > 0;
+  const share = hasLimit ? Math.round(category.budgetRatio * 100) : Math.round(category.share * 100);
+  const fill = hasLimit ? Math.min(100, category.budgetRatio * 100) : Math.min(100, share);
   const saveTen = money(category.total * 0.1);
+  const limitText = hasLimit
+    ? `${share}% лимита · ${category.budgetRemaining >= 0 ? `осталось ${money(category.budgetRemaining)}` : `сверх ${money(Math.abs(category.budgetRemaining))}`}`
+    : `${share}% расходов · минус 10% даст ${saveTen}`;
   return `
     <article class="risk-row">
       <div class="cat-icon" style="--cat:${category.color}">${icon(category.icon)}</div>
@@ -674,8 +691,8 @@ function renderRiskCategory(category) {
           <strong>${escapeHtml(category.label)}</strong>
           <span>${money(category.total)}</span>
         </div>
-        <div class="mini-track"><div class="mini-fill" style="--fill:${Math.min(100, share)}%;--cat:${category.color}"></div></div>
-        <p>${share}% расходов · минус 10% даст ${saveTen}</p>
+        <div class="mini-track"><div class="mini-fill" style="--fill:${fill}%;--cat:${category.color}"></div></div>
+        <p>${escapeHtml(limitText)}</p>
       </div>
     </article>
   `;
@@ -791,15 +808,12 @@ function historyWeekSummary() {
 }
 
 function weekPulseStats(start, end) {
-  const previousStart = new Date(start);
-  previousStart.setDate(start.getDate() - 7);
+  const previousStart = addDays(start, -7);
   const previousEnd = new Date(start);
   const expenseTransactions = state.transactions.filter((transaction) => transaction.type === "expense");
   const days = Array.from({ length: 7 }, (_, index) => {
-    const dayStart = new Date(start);
-    dayStart.setDate(start.getDate() + index);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayStart.getDate() + 1);
+    const dayStart = addDays(start, index);
+    const dayEnd = addDays(dayStart, 1);
     const total = expenseTransactions
       .filter((transaction) => {
         const occurredAt = new Date(transaction.occurredAt);
@@ -850,17 +864,26 @@ function renderCategoryList(categories) {
   const max = Math.max(...categories.map((category) => category.total), 1);
   return `
     <div class="category-list">
-      ${categories.map((category) => `
-        <div class="category-row" style="--cat:${category.color}">
+      ${categories.map((category) => {
+        const hasLimit = Number(category.budget) > 0;
+        const fill = hasLimit
+          ? Math.min(100, (Number(category.total) / Number(category.budget || 1)) * 100)
+          : Math.max(5, (category.total / max) * 100);
+        const caption = hasLimit
+          ? `${Math.round((Number(category.budgetRatio) || 0) * 100)}% лимита · ${money(category.budget)}`
+          : `${Math.round(categoryShare(category, max) * 100)}% расходов`;
+        return `
+        <div class="category-row ${hasLimit ? `limit-${category.budgetStatus}` : ""}" style="--cat:${category.color}">
           <div class="cat-icon" style="--cat:${category.color}">${icon(category.icon)}</div>
           <div>
             <strong>${escapeHtml(category.label)}</strong>
-            <span>${Math.round(categoryShare(category, max) * 100)}% расходов</span>
-            <div class="mini-track"><div class="mini-fill" style="--fill:${Math.max(5, (category.total / max) * 100)}%"></div></div>
+            <span>${escapeHtml(caption)}</span>
+            <div class="mini-track"><div class="mini-fill" style="--fill:${hasLimit ? Math.max(0, fill) : Math.max(5, fill)}%"></div></div>
           </div>
           <div class="category-amount">${money(category.total)}</div>
         </div>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
   `;
 }
@@ -873,11 +896,12 @@ function categoryShare(category, max) {
 }
 
 function renderBudgetEditor() {
+  const baseBudget = Number(state.settings?.monthlyBudget ?? state.summary.baseBudget ?? 0);
   return `
     <form class="budget-editor" id="budget-form">
       <label for="budget-input">Бюджет месяца</label>
       <div class="budget-editor-row">
-        <input id="budget-input" value="${Math.round(state.summary.budget)}" inputmode="numeric" />
+        <input id="budget-input" value="${Math.round(baseBudget)}" inputmode="numeric" />
         <button class="icon-button" title="Сохранить бюджет">${icon("save")}</button>
       </div>
     </form>
@@ -899,6 +923,30 @@ function renderCategoryManager() {
           <button class="category-remove" data-category-delete="${category.id}" title="Удалить категорию ${escapeAttr(category.label)}" type="button">×</button>
         </span>
       `).join("")}</div>` : ""}
+    </form>
+  `;
+}
+
+function renderCategoryLimitEditor() {
+  const categories = state.categories.filter((category) => category.id !== "income");
+  return `
+    <form class="limit-editor" id="category-limit-form">
+      <div class="limit-editor-head">
+        <label>Лимиты категорий</label>
+        <span>Месячный ориентир для еды, доставки, дома и других трат</span>
+      </div>
+      <div class="limit-list">
+        ${categories.map((category) => {
+          const value = categoryBudgetFor(category.id);
+          return `
+            <label class="limit-row" style="--cat:${category.color}">
+              <span><i>${icon(category.icon)}</i>${escapeHtml(category.label)}</span>
+              <input data-category-limit="${escapeAttr(category.id)}" inputmode="numeric" value="${value ? Math.round(value) : ""}" placeholder="0" />
+            </label>
+          `;
+        }).join("")}
+      </div>
+      <button class="ghost-button compact" type="submit">Сохранить лимиты</button>
     </form>
   `;
 }
@@ -966,6 +1014,9 @@ function bindEvents() {
 
   const budgetForm = document.querySelector("#budget-form");
   if (budgetForm) budgetForm.addEventListener("submit", submitBudget);
+
+  const limitForm = document.querySelector("#category-limit-form");
+  if (limitForm) limitForm.addEventListener("submit", submitCategoryLimits);
 
   document.querySelectorAll("[data-category-form]").forEach((form) => {
     form.addEventListener("submit", submitCategory);
@@ -1109,6 +1160,31 @@ async function submitBudget(event) {
   }
 }
 
+async function submitCategoryLimits(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const categoryBudgets = {};
+  form.querySelectorAll("[data-category-limit]").forEach((input) => {
+    const value = Number(String(input.value || "").replace(/\s/g, ""));
+    if (Number.isFinite(value) && value > 0) {
+      categoryBudgets[input.dataset.categoryLimit] = value;
+    }
+  });
+  try {
+    const result = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ categoryBudgets })
+    });
+    state.settings = result.settings;
+    state.summary = result.summary;
+    state.insights = result.insights;
+    render();
+    toast("Лимиты сохранены", "Категории теперь сравниваются с вашими ориентирами");
+  } catch (error) {
+    toast("Лимиты не сохранены", error.message);
+  }
+}
+
 async function submitCategory(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -1138,6 +1214,7 @@ async function deleteCategory(id) {
   try {
     const result = await api(`/api/categories/${id}`, { method: "DELETE" });
     state.categories = result.categories;
+    if (result.settings) state.settings = result.settings;
     state.transactions = result.transactions;
     state.summary = result.summary;
     state.insights = result.insights;
@@ -1202,17 +1279,14 @@ async function updateTransaction(id, payload) {
 
 function filteredTransactions() {
   const now = new Date();
-  const start = new Date(now);
-  if (historyFilter === "week") start.setDate(now.getDate() - 6);
-  if (historyFilter === "month") start.setDate(1);
-  start.setHours(0, 0, 0, 0);
   const selectedWeek = historyWeekRange();
+  const currentMonth = monthBounds(monthKey(now));
   const transactions = state.transactions.filter((transaction) => {
     const occurredAt = new Date(transaction.occurredAt);
     const inRange = historyFilter === "all"
       || (historyFilter === "future" && occurredAt > now)
       || (historyFilter === "week" && occurredAt >= selectedWeek.start && occurredAt < selectedWeek.end)
-      || (historyFilter === "month" && occurredAt >= start);
+      || (historyFilter === "month" && occurredAt >= currentMonth.start && occurredAt < currentMonth.end);
     return inRange && matchesHistoryQueryAndCategory(transaction);
   });
   if (historyFilter === "future") {
@@ -1299,6 +1373,10 @@ function categoryById(id) {
   return state.categories.find((category) => category.id === id) || state.categories[state.categories.length - 1];
 }
 
+function categoryBudgetFor(id) {
+  return roundClientMoney(Number(state.settings?.categoryBudgets?.[id] || 0));
+}
+
 function money(value) {
   return formatter.format(Number(value) || 0);
 }
@@ -1307,23 +1385,72 @@ function roundClientMoney(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
 
+function appDateParts(date = new Date()) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = Number(part.value);
+    return acc;
+  }, {});
+}
+
+function appDateTimeParts(date) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = Number(part.value);
+    return acc;
+  }, {});
+}
+
+function timeZoneOffsetMs(date) {
+  const parts = appDateTimeParts(date);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return asUtc - date.getTime();
+}
+
+function zonedDateTimeToUtc(year, monthIndex, day, hour = 0, minute = 0, second = 0) {
+  const guess = new Date(Date.UTC(year, monthIndex, day, hour, minute, second, 0));
+  const first = new Date(guess.getTime() - timeZoneOffsetMs(guess));
+  return new Date(guess.getTime() - timeZoneOffsetMs(first));
+}
+
+function businessToday(now = new Date()) {
+  const parts = appDateParts(now);
+  return zonedDateTimeToUtc(parts.year, parts.month - 1, parts.day, 0, 0, 0);
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 86400000);
+}
+
 function currentHistoryWeekIndex(date = new Date()) {
-  return Math.floor((date.getDate() - 1) / 7);
+  return Math.floor((appDateParts(date).day - 1) / 7);
 }
 
 function historyWeekRange() {
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), 1 + historyWeekIndex * 7, 0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 7);
+  const today = appDateParts();
+  const start = zonedDateTimeToUtc(today.year, today.month - 1, 1 + historyWeekIndex * 7, 0, 0, 0);
+  const end = addDays(start, 7);
   return { start, end };
 }
 
 function historyWeekLabel(start, end) {
-  const lastDay = new Date(end);
-  lastDay.setDate(end.getDate() - 1);
-  const sameMonth = start.getMonth() === lastDay.getMonth() && start.getFullYear() === lastDay.getFullYear();
-  if (sameMonth) return `${start.getDate()}-${lastDay.getDate()} ${compactMonthLabel(start)}`;
+  const lastDay = addDays(end, -1);
+  const startParts = appDateParts(start);
+  const lastParts = appDateParts(lastDay);
+  const sameMonth = startParts.month === lastParts.month && startParts.year === lastParts.year;
+  if (sameMonth) return `${startParts.day}-${lastParts.day} ${compactMonthLabel(start)}`;
   return `${compactDateLabel(start)} - ${compactDateLabel(lastDay)}`;
 }
 
@@ -1339,29 +1466,32 @@ function compactMonthLabel(date) {
 
 function monthKey(date) {
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
-  return `${safeDate.getFullYear()}-${String(safeDate.getMonth() + 1).padStart(2, "0")}`;
+  const parts = appDateParts(safeDate);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}`;
 }
 
 function monthBounds(key) {
   const [year, month] = String(key || monthKey(new Date())).split("-").map(Number);
-  const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  const end = new Date(year, month, 1, 0, 0, 0, 0);
+  const start = zonedDateTimeToUtc(year, month - 1, 1, 0, 0, 0);
+  const end = zonedDateTimeToUtc(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1, 0, 0, 0);
   return { start, end };
 }
 
 function fullMonthLabel(key) {
   const { start } = monthBounds(key);
-  return start.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  return start.toLocaleDateString("ru-RU", { month: "long", year: "numeric", timeZone: APP_TIME_ZONE });
 }
 
 function shortMonthLabel(key) {
   const { start } = monthBounds(key);
-  return start.toLocaleDateString("ru-RU", { month: "short", year: "2-digit" }).replace(".", "");
+  return start.toLocaleDateString("ru-RU", { month: "short", year: "2-digit", timeZone: APP_TIME_ZONE }).replace(".", "");
 }
 
 function dateInputToIso(value) {
   if (!value) return null;
-  const date = new Date(`${value}T12:00:00`);
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = zonedDateTimeToUtc(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 

@@ -337,7 +337,8 @@ button {
 }
 
 .budget-editor label,
-.category-editor label {
+.category-editor label,
+.limit-editor-head label {
   font-size: 12px;
   color: var(--muted);
 }
@@ -350,7 +351,8 @@ button {
 }
 
 .budget-editor input,
-.category-editor input {
+.category-editor input,
+.limit-editor input {
   width: 100%;
   min-width: 0;
   height: 34px;
@@ -364,6 +366,7 @@ button {
 
 .budget-editor input:focus,
 .category-editor input:focus,
+.limit-editor input:focus,
 .quick-input:focus,
 .date-input:focus,
 .search-input:focus,
@@ -385,6 +388,66 @@ button {
 
 .sidebar-footer .category-editor {
   margin-top: 0;
+}
+
+.limit-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.limit-editor-head {
+  display: grid;
+  gap: 3px;
+}
+
+.limit-editor-head span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.limit-list {
+  display: grid;
+  gap: 8px;
+}
+
+.limit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 10px;
+}
+
+.limit-row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.limit-row i {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--cat);
+  background: color-mix(in srgb, var(--cat) 14%, white);
+  font-style: normal;
+}
+
+.limit-row svg {
+  width: 15px;
+  height: 15px;
 }
 
 .custom-category-list {
@@ -941,6 +1004,14 @@ h1 {
   max-width: 100%;
   border-radius: inherit;
   background: var(--cat);
+}
+
+.category-row.limit-watch .mini-fill {
+  background: var(--amber);
+}
+
+.category-row.limit-over .mini-fill {
+  background: var(--red);
 }
 
 .quick-shell {
@@ -1991,6 +2062,10 @@ h1 {
 
   .month-archive {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .limit-row {
+    grid-template-columns: minmax(0, 1fr) 86px;
   }
 
   .category-row {
