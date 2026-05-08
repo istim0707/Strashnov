@@ -11,6 +11,12 @@ const DATA_FILE = path.join(DATA_DIR, "finley.json");
 const SESSION_COOKIE = "finley_session";
 const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Moscow";
+const ADMIN_EMAILS = new Set(
+  String(process.env.FINLEY_ADMIN_EMAILS || "istim07@mail.ru")
+    .split(",")
+    .map(normalizeEmail)
+    .filter(Boolean)
+);
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception:", error);
@@ -494,6 +500,7 @@ function normalizeStore(store) {
       id: crypto.randomUUID(),
       name: "Demo",
       email: "demo@finley.local",
+      role: "user",
       passwordHash: null,
       passwordSalt: null,
       createdAt: nowIso(),
@@ -525,6 +532,11 @@ function normalizeStore(store) {
   for (const user of store.users) {
     if (!user.id) {
       user.id = crypto.randomUUID();
+      changed = true;
+    }
+    const role = ADMIN_EMAILS.has(normalizeEmail(user.email)) || user.role === "admin" ? "admin" : "user";
+    if (user.role !== role) {
+      user.role = role;
       changed = true;
     }
     const normalizedSettings = normalizeSettings(user.settings);
@@ -899,11 +911,53 @@ function normalizeEmail(value) {
 }
 
 function publicUser(user) {
+  const isAdmin = isAdminUser(user);
   return {
     id: user.id,
     name: user.name,
     email: user.email,
+    role: isAdmin ? "admin" : "user",
+    isAdmin,
     createdAt: user.createdAt
+  };
+}
+
+function isAdminUser(user) {
+  return Boolean(user && (user.role === "admin" || ADMIN_EMAILS.has(normalizeEmail(user.email))));
+}
+
+function adminOverview(store) {
+  const activeSessions = new Map();
+  const now = Date.now();
+  for (const session of store.sessions || []) {
+    if (new Date(session.expiresAt).getTime() <= now) continue;
+    activeSessions.set(session.userId, (activeSessions.get(session.userId) || 0) + 1);
+  }
+
+  const users = (store.users || [])
+    .map((user) => {
+      const passwordProtected = Boolean(user.passwordHash && user.passwordSalt);
+      return {
+        id: user.id,
+        name: user.name || "",
+        email: user.email || "",
+        role: isAdminUser(user) ? "admin" : "user",
+        isAdmin: isAdminUser(user),
+        createdAt: user.createdAt || "",
+        transactionsCount: Array.isArray(user.transactions) ? user.transactions.length : 0,
+        customCategoriesCount: Array.isArray(user.customCategories) ? user.customCategories.length : 0,
+        activeSessions: activeSessions.get(user.id) || 0,
+        passwordProtected,
+        passwordLabel: passwordProtected ? "Скрыт (scrypt)" : "Не задан"
+      };
+    })
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+  return {
+    userCount: users.length,
+    adminCount: users.filter((user) => user.isAdmin).length,
+    activeSessionCount: [...activeSessions.values()].reduce((sum, count) => sum + count, 0),
+    users
   };
 }
 
@@ -984,6 +1038,7 @@ async function apiSignup(req, res) {
     id: crypto.randomUUID(),
     name,
     email,
+    role: ADMIN_EMAILS.has(email) ? "admin" : "user",
     passwordHash: passwordRecord.hash,
     passwordSalt: passwordRecord.salt,
     createdAt: nowIso(),
@@ -1039,6 +1094,7 @@ async function apiState(req, res) {
     categories: categoriesFor(user),
     summary,
     insights: buildInsights(user, summary),
+    admin: isAdminUser(user) ? adminOverview(context.store) : null,
     transactions: user.transactions
       .slice()
       .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
