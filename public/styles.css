@@ -1873,7 +1873,7 @@ h1 {
 
 .admin-user-row {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.3fr);
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.3fr) auto;
   align-items: center;
   gap: 14px;
   padding: 14px;
@@ -1945,6 +1945,19 @@ h1 {
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.admin-delete-button {
+  width: auto;
+  justify-self: end;
+  min-width: 110px;
+  min-height: 38px;
+  gap: 7px;
+  padding: 0 12px;
+}
+
+.admin-delete-button span {
+  font-weight: 760;
 }
 
 .ghost-button.compact {
@@ -2326,6 +2339,13 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .admin-delete-button {
+    grid-column: auto;
+    grid-row: auto;
+    justify-self: stretch;
+    width: 100%;
+  }
+
   .tx-select {
     grid-column: 2 / 4;
     max-width: none;
@@ -2335,6 +2355,11 @@ h1 {
   .danger-button {
     grid-column: 3;
     grid-row: 1;
+  }
+
+  .admin-delete-button {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .toast {

@@ -815,6 +815,7 @@ function renderAdminUsers() {
 function renderAdminUser(user) {
   const initial = (user.name || user.email || "?").trim().slice(0, 1).toLocaleUpperCase("ru-RU");
   const createdAt = user.createdAt ? compactDateLabel(new Date(user.createdAt)) : "нет даты";
+  const isCurrent = user.id === state.user?.id;
   return `
     <article class="admin-user-row ${user.isAdmin ? "admin" : ""}">
       <div class="admin-user-main">
@@ -831,6 +832,9 @@ function renderAdminUser(user) {
         <span><b>${user.activeSessions || 0}</b> сессий</span>
         <span><b>${escapeHtml(createdAt)}</b> создан</span>
       </div>
+      <button class="danger-button admin-delete-button" data-admin-user-delete="${escapeAttr(user.id)}" data-admin-user-email="${escapeAttr(user.email || "")}" type="button" title="${isCurrent ? "Удалить свой аккаунт" : "Удалить пользователя"}">
+        ${icon("trash")}<span>Удалить</span>
+      </button>
     </article>
   `;
 }
@@ -1206,6 +1210,10 @@ function bindEvents() {
     button.addEventListener("click", () => deleteCategory(button.dataset.categoryDelete));
   });
 
+  document.querySelectorAll("[data-admin-user-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteAdminUser(button.dataset.adminUserDelete, button.dataset.adminUserEmail));
+  });
+
   document.querySelectorAll("[data-history-filter]").forEach((button) => {
     button.addEventListener("click", () => {
       historyFilter = button.dataset.historyFilter;
@@ -1407,6 +1415,31 @@ async function deleteCategory(id) {
     state.insights = result.insights;
     render();
     toast("Категория удалена", "Операции перенесены в «Другое»");
+  } catch (error) {
+    toast("Не удалено", error.message);
+  }
+}
+
+async function deleteAdminUser(id, email) {
+  const isCurrent = id === state.user?.id;
+  const message = isCurrent
+    ? "Удалить свой аккаунт? Вы выйдете из Finley, а эту почту можно будет зарегистрировать заново."
+    : `Удалить аккаунт ${email || "пользователя"}? Почту можно будет зарегистрировать заново.`;
+  if (!window.confirm(message)) return;
+
+  try {
+    const result = await api(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (result.deletedSelf) {
+      state = null;
+      lastResult = null;
+      authMode = "signup";
+      renderAuth();
+      toast("Аккаунт удален", "Почта снова свободна для регистрации");
+      return;
+    }
+    state.admin = result.admin;
+    render();
+    toast("Аккаунт удален", `${email || "Почта"} снова свободна`);
   } catch (error) {
     toast("Не удалено", error.message);
   }
