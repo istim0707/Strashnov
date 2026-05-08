@@ -1,5 +1,5 @@
 # Finley
-
+# https://finley-pruw.onrender.com #
 Finley is a dependency-free fullstack prototype for a personal AI finance tracker with per-user profiles.
 
 ## Run
