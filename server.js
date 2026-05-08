@@ -1014,6 +1014,16 @@ async function requireAuth(req, res) {
   return context;
 }
 
+async function requireAdmin(req, res) {
+  const context = await requireAuth(req, res);
+  if (!context) return null;
+  if (!isAdminUser(context.user)) {
+    responseError(res, 403, "Нужен доступ администратора.");
+    return null;
+  }
+  return context;
+}
+
 async function apiMe(req, res) {
   const context = await getAuthContext(req);
   responseJson(res, 200, { user: context.user ? publicUser(context.user) : null });
@@ -1099,6 +1109,31 @@ async function apiState(req, res) {
       .slice()
       .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
   });
+}
+
+async function apiDeleteAdminUser(req, res, id) {
+  const context = await requireAdmin(req, res);
+  if (!context) return;
+
+  const index = context.store.users.findIndex((user) => user.id === id);
+  if (index < 0) return responseError(res, 404, "Пользователь не найден.");
+
+  const [deletedUser] = context.store.users.splice(index, 1);
+  const deletedSelf = deletedUser.id === context.user.id;
+  context.store.sessions = context.store.sessions.filter((session) => session.userId !== deletedUser.id);
+
+  await writeStore(context.store);
+  responseJson(res, 200, {
+    ok: true,
+    deletedSelf,
+    deletedUser: {
+      id: deletedUser.id,
+      email: deletedUser.email
+    },
+    admin: deletedSelf ? null : adminOverview(context.store)
+  }, deletedSelf ? {
+    "set-cookie": sessionCookie("", 0)
+  } : {});
 }
 
 async function apiCreateTransaction(req, res) {
@@ -1727,6 +1762,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/auth/logout" && req.method === "POST") return await apiLogout(req, res);
     if (url.pathname === "/healthz" && req.method === "GET") return responseJson(res, 200, { ok: true });
     if (url.pathname === "/api/state" && req.method === "GET") return await apiState(req, res);
+    if (url.pathname.startsWith("/api/admin/users/") && req.method === "DELETE") {
+      return await apiDeleteAdminUser(req, res, url.pathname.split("/").pop());
+    }
     if (url.pathname === "/api/categories" && req.method === "POST") return await apiCreateCategory(req, res);
     if (url.pathname.startsWith("/api/categories/") && req.method === "DELETE") {
       return await apiDeleteCategory(req, res, url.pathname.split("/").pop());
