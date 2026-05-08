@@ -263,6 +263,10 @@ button {
   color: var(--violet);
 }
 
+.nav-button[data-view-link="admin"][aria-current="page"] svg {
+  color: var(--green);
+}
+
 .sidebar-footer {
   position: absolute;
   right: 18px;
@@ -297,6 +301,19 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.profile-card em {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #0f7a5f;
+  background: var(--green-soft);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 820;
+  vertical-align: middle;
 }
 
 .ai-pill,
@@ -1834,6 +1851,102 @@ h1 {
   display: block;
 }
 
+.admin-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.admin-user-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-user-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.3fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.admin-user-row.admin {
+  border-left-color: var(--green);
+  background: linear-gradient(90deg, rgba(227, 247, 239, 0.72), #fff 42%);
+}
+
+.admin-user-main {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.admin-avatar {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 8px;
+  color: #fff;
+  background: #101214;
+  font-weight: 820;
+}
+
+.admin-user-main strong,
+.admin-user-main span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-main span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-user-meta {
+  display: grid;
+  grid-template-columns: minmax(78px, 0.75fr) minmax(126px, 1.25fr) repeat(3, minmax(70px, 0.75fr));
+  gap: 8px;
+}
+
+.admin-user-meta span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: 11px;
+}
+
+.admin-user-meta b {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ghost-button.compact {
   min-height: 32px;
   padding: 0 10px;
@@ -1986,7 +2099,9 @@ h1 {
   .history-grid,
   .insights-grid,
   .advice-grid,
-  .advice-board {
+  .advice-board,
+  .admin-user-row,
+  .admin-user-meta {
     grid-template-columns: 1fr;
   }
 
@@ -2012,6 +2127,10 @@ h1 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .admin-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .advice-kpis {
     grid-template-columns: 1fr;
   }
@@ -2023,7 +2142,7 @@ h1 {
     left: 12px;
     z-index: 60;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
     gap: 4px;
     width: auto;
     max-width: 560px;
@@ -2117,7 +2236,8 @@ h1 {
   }
 
   .metric-grid,
-  .parse-grid {
+  .parse-grid,
+  .admin-metrics {
     grid-template-columns: 1fr;
   }
 
@@ -2199,6 +2319,11 @@ h1 {
 
   .tx-row {
     grid-template-columns: 38px minmax(0, 1fr) auto;
+  }
+
+  .admin-user-row,
+  .admin-user-meta {
+    grid-template-columns: 1fr;
   }
 
   .tx-select {

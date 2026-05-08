@@ -5,7 +5,8 @@ const views = [
   { id: "dashboard", label: "Обзор", short: "Бюджет" },
   { id: "quick", label: "Добавить", short: "Добавить" },
   { id: "history", label: "История", short: "История" },
-  { id: "insights", label: "Советы", short: "Советы" }
+  { id: "insights", label: "Советы", short: "Советы" },
+  { id: "admin", label: "Пользователи", short: "Люди", adminOnly: true }
 ];
 
 const iconPaths = {
@@ -13,6 +14,7 @@ const iconPaths = {
   quick: '<path d="M12 5v14"/><path d="M5 12h14"/>',
   history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>',
   insights: '<path d="M12 2v5"/><path d="M12 17v5"/><path d="M4.93 4.93l3.54 3.54"/><path d="M15.54 15.54l3.53 3.53"/><path d="M2 12h5"/><path d="M17 12h5"/><path d="M4.93 19.07l3.54-3.53"/><path d="M15.54 8.46l3.53-3.53"/>',
+  admin: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
   send: '<path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7Z"/>',
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/>',
@@ -60,13 +62,17 @@ const weekdayFormatter = new Intl.DateTimeFormat("ru-RU", {
 init();
 
 async function init() {
-  activeView = location.hash.replace("#", "") || "dashboard";
-  if (!views.some((view) => view.id === activeView)) activeView = "dashboard";
+  activeView = currentHashView();
   window.addEventListener("hashchange", () => {
-    activeView = location.hash.replace("#", "") || "dashboard";
+    activeView = currentHashView();
     render();
   });
   await boot();
+}
+
+function currentHashView() {
+  const view = location.hash.replace("#", "") || "dashboard";
+  return views.some((item) => item.id === view) ? view : "dashboard";
 }
 
 async function boot() {
@@ -148,6 +154,7 @@ function renderAuth() {
 }
 
 function render() {
+  if (activeView === "admin" && !isAdmin()) activeView = "dashboard";
   const nav = renderNav("nav");
   const mobileNav = renderNav("mobile-nav", true);
   app.className = "app-shell";
@@ -180,7 +187,7 @@ function render() {
 
 function renderTopbar() {
   const dashboardSummary = activeView === "dashboard" ? getDashboardSummary() : null;
-  const showTopAdd = activeView !== "quick" && !(activeView === "dashboard" && dashboardSummary?.isCurrentMonth && dashboardSummary.status === "over");
+  const showTopAdd = activeView !== "quick" && activeView !== "admin" && !(activeView === "dashboard" && dashboardSummary?.isCurrentMonth && dashboardSummary.status === "over");
   const copy = {
     dashboard: {
       eyebrow: "Обзор",
@@ -201,6 +208,11 @@ function renderTopbar() {
       eyebrow: "Советы",
       title: "Что изменить в поведении",
       subtitle: "Один главный рычаг на сейчас, без бухгалтерского шума."
+    },
+    admin: {
+      eyebrow: "Администрирование",
+      title: "Информация о пользователях",
+      subtitle: "Кто зарегистрирован, сколько активных сессий и как хранятся пароли."
     }
   }[activeView];
 
@@ -231,6 +243,7 @@ function renderActiveView() {
   if (activeView === "quick") return renderQuick();
   if (activeView === "history") return renderHistory();
   if (activeView === "insights") return renderInsights();
+  if (activeView === "admin" && isAdmin()) return renderAdminUsers();
   return renderDashboard();
 }
 
@@ -765,6 +778,63 @@ function renderInsights() {
   `;
 }
 
+function renderAdminUsers() {
+  const admin = state.admin || { userCount: 0, adminCount: 0, activeSessionCount: 0, users: [] };
+  const users = Array.isArray(admin.users) ? admin.users : [];
+  return `
+    <section class="view">
+      <div class="admin-grid">
+        <section class="panel admin-summary">
+          <div class="panel-header">
+            <div>
+              <h2>Сводка</h2>
+              <p>Всего зарегистрированных профилей: ${admin.userCount}</p>
+            </div>
+          </div>
+          <div class="metric-grid admin-metrics">
+            ${metric("Пользователей", String(admin.userCount || users.length))}
+            ${metric("Админов", String(admin.adminCount || users.filter((user) => user.isAdmin).length))}
+            ${metric("Активных сессий", String(admin.activeSessionCount || 0))}
+          </div>
+        </section>
+
+        <section class="panel admin-users-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Пользователи</h2>
+              <p>Почта, роль и состояние пароля</p>
+            </div>
+          </div>
+          ${users.length ? `<div class="admin-user-list">${users.map(renderAdminUser).join("")}</div>` : `<div class="empty small">Пользователей пока нет</div>`}
+        </section>
+      </div>
+    </section>
+  `;
+}
+
+function renderAdminUser(user) {
+  const initial = (user.name || user.email || "?").trim().slice(0, 1).toLocaleUpperCase("ru-RU");
+  const createdAt = user.createdAt ? compactDateLabel(new Date(user.createdAt)) : "нет даты";
+  return `
+    <article class="admin-user-row ${user.isAdmin ? "admin" : ""}">
+      <div class="admin-user-main">
+        <div class="admin-avatar">${escapeHtml(initial)}</div>
+        <div>
+          <strong>${escapeHtml(user.name || "Без имени")}</strong>
+          <span>${escapeHtml(user.email || "почта не указана")}</span>
+        </div>
+      </div>
+      <div class="admin-user-meta">
+        <span><b>${user.isAdmin ? "Админ" : "Пользователь"}</b> роль</span>
+        <span><b>${escapeHtml(user.passwordLabel || "Скрыт")}</b> пароль</span>
+        <span><b>${user.transactionsCount || 0}</b> операций</span>
+        <span><b>${user.activeSessions || 0}</b> сессий</span>
+        <span><b>${escapeHtml(createdAt)}</b> создан</span>
+      </div>
+    </article>
+  `;
+}
+
 function renderAdviceItem(insight) {
   return `
     <article class="advice-item ${escapeAttr(insight.tone || "neutral")}">
@@ -1061,7 +1131,7 @@ function renderUserProfile() {
   return `
     <section class="profile-card">
       <span>Профиль</span>
-      <strong>${escapeHtml(user.name || "Пользователь")}</strong>
+      <strong>${escapeHtml(user.name || "Пользователь")}${isAdmin() ? `<em>Админ</em>` : ""}</strong>
       <small>${escapeHtml(user.email || "")}</small>
       <button class="ghost-button" data-logout type="button">Выйти</button>
     </section>
@@ -1074,9 +1144,10 @@ function renderAiPill() {
 }
 
 function renderNav(className, short = false) {
+  const availableViews = views.filter((view) => !view.adminOnly || isAdmin());
   return `
     <nav class="${className}" aria-label="Разделы Finley">
-      ${views.map((view) => `
+      ${availableViews.map((view) => `
         <button class="nav-button" data-view-link="${view.id}" aria-current="${activeView === view.id ? "page" : "false"}" title="${view.label}">
           ${icon(view.id)}
           <span>${short ? view.short : view.label}</span>
@@ -1084,6 +1155,10 @@ function renderNav(className, short = false) {
       `).join("")}
     </nav>
   `;
+}
+
+function isAdmin() {
+  return Boolean(state?.user?.isAdmin);
 }
 
 function bindAuthEvents() {
