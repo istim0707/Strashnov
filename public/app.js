@@ -6,6 +6,7 @@ const views = [
   { id: "quick", label: "Добавить", short: "Добавить" },
   { id: "history", label: "История", short: "История" },
   { id: "insights", label: "Советы", short: "Советы" },
+  { id: "settings", label: "Настройки", short: "Настройки" },
   { id: "admin", label: "Пользователи", short: "Люди", adminOnly: true }
 ];
 
@@ -14,6 +15,7 @@ const iconPaths = {
   quick: '<path d="M12 5v14"/><path d="M5 12h14"/>',
   history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>',
   insights: '<path d="M12 2v5"/><path d="M12 17v5"/><path d="M4.93 4.93l3.54 3.54"/><path d="M15.54 15.54l3.53 3.53"/><path d="M2 12h5"/><path d="M17 12h5"/><path d="M4.93 19.07l3.54-3.53"/><path d="M15.54 8.46l3.53-3.53"/>',
+  settings: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.08 1.65V21a2 2 0 1 1-4 0v-.09A1.8 1.8 0 0 0 8.8 19.26a1.8 1.8 0 0 0-1.98.36l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.8 1.8 0 0 0 4.35 15a1.8 1.8 0 0 0-1.65-1.08H2.6a2 2 0 1 1 0-4h.09A1.8 1.8 0 0 0 4.34 8.8a1.8 1.8 0 0 0-.36-1.98l-.06-.06A2 2 0 1 1 6.75 3.93l.06.06a1.8 1.8 0 0 0 1.98.36h.01A1.8 1.8 0 0 0 9.88 2.7V2.6a2 2 0 1 1 4 0v.09a1.8 1.8 0 0 0 1.08 1.65 1.8 1.8 0 0 0 1.98-.36l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.8 1.8 0 0 0-.36 1.98v.01a1.8 1.8 0 0 0 1.65 1.08h.09a2 2 0 1 1 0 4h-.09A1.8 1.8 0 0 0 19.4 15Z"/>',
   admin: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
   send: '<path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7Z"/>',
@@ -28,8 +30,19 @@ const iconPaths = {
   bag: '<path d="M6 8h12l1 13H5L6 8Z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
   plane: '<path d="M17.8 19.2 16 11l5-5a2 2 0 0 0-3-3l-5 5-8.2-1.8L3 8l6 4-4 4 3 1 1 3 4-4 4 6 1.8-2.8Z"/>',
   "arrow-down": '<path d="M12 3v18"/><path d="m6 15 6 6 6-6"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+  moon: '<path d="M20.99 12.45A8.5 8.5 0 1 1 11.55 3a6.5 6.5 0 0 0 9.44 9.45Z"/>',
+  system: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
   dot: '<circle cx="12" cy="12" r="3"/>'
 };
+
+const THEME_OPTIONS = [
+  { id: "system", label: "Системная", hint: "Как на устройстве", icon: "system" },
+  { id: "light", label: "Светлая", hint: "Дневной режим", icon: "sun" },
+  { id: "dark", label: "Темная", hint: "Мягче вечером", icon: "moon" }
+];
+
+const THEME_VALUES = new Set(THEME_OPTIONS.map((theme) => theme.id));
 
 let state = null;
 let activeView = "dashboard";
@@ -41,6 +54,9 @@ let dashboardMonthKey = monthKey(new Date());
 let lastResult = null;
 let toastTimer = null;
 let authMode = "login";
+let themeMode = readStoredTheme();
+
+applyTheme(themeMode);
 
 const formatter = new Intl.NumberFormat("ru-RU", {
   style: "currency",
@@ -63,6 +79,10 @@ init();
 
 async function init() {
   activeView = currentHashView();
+  const systemThemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+  systemThemeQuery?.addEventListener?.("change", () => {
+    if (themeMode === "system") applyTheme(themeMode);
+  });
   window.addEventListener("hashchange", () => {
     activeView = currentHashView();
     render();
@@ -90,6 +110,8 @@ async function boot() {
 async function loadState() {
   try {
     state = await api("/api/state");
+    themeMode = normalizeThemeMode(state.settings?.theme);
+    applyTheme(themeMode);
     render();
   } catch (error) {
     if (error.status === 401) {
@@ -99,6 +121,36 @@ async function loadState() {
     }
     app.innerHTML = `<div class="boot"><div class="boot-mark">F</div><div><strong>Finley</strong><span>${escapeHtml(error.message)}</span></div></div>`;
   }
+}
+
+function readStoredTheme() {
+  try {
+    return normalizeThemeMode(localStorage.getItem("finley_theme"));
+  } catch {
+    return "system";
+  }
+}
+
+function normalizeThemeMode(value) {
+  const theme = String(value || "").trim().toLowerCase();
+  return THEME_VALUES.has(theme) ? theme : "system";
+}
+
+function resolveTheme(theme) {
+  if (theme === "system") {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return normalizeThemeMode(theme) === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  themeMode = normalizeThemeMode(theme);
+  const resolved = resolveTheme(themeMode);
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.dataset.themeMode = themeMode;
+  try {
+    localStorage.setItem("finley_theme", themeMode);
+  } catch {}
 }
 
 async function api(url, options = {}) {
@@ -187,7 +239,7 @@ function render() {
 
 function renderTopbar() {
   const dashboardSummary = activeView === "dashboard" ? getDashboardSummary() : null;
-  const showTopAdd = activeView !== "quick" && activeView !== "admin" && !(activeView === "dashboard" && dashboardSummary?.isCurrentMonth && dashboardSummary.status === "over");
+  const showTopAdd = !["quick", "admin", "settings"].includes(activeView) && !(activeView === "dashboard" && dashboardSummary?.isCurrentMonth && dashboardSummary.status === "over");
   const copy = {
     dashboard: {
       eyebrow: "Обзор",
@@ -208,6 +260,11 @@ function renderTopbar() {
       eyebrow: "Советы",
       title: "Что изменить в поведении",
       subtitle: "Один главный рычаг на сейчас, без бухгалтерского шума."
+    },
+    settings: {
+      eyebrow: "Настройки",
+      title: "Профиль и внешний вид",
+      subtitle: "Личные параметры Finley: имя профиля и тема интерфейса."
     },
     admin: {
       eyebrow: "Администрирование",
@@ -243,6 +300,7 @@ function renderActiveView() {
   if (activeView === "quick") return renderQuick();
   if (activeView === "history") return renderHistory();
   if (activeView === "insights") return renderInsights();
+  if (activeView === "settings") return renderSettings();
   if (activeView === "admin" && isAdmin()) return renderAdminUsers();
   return renderDashboard();
 }
@@ -778,6 +836,54 @@ function renderInsights() {
   `;
 }
 
+function renderSettings() {
+  const user = state.user || {};
+  const currentTheme = normalizeThemeMode(state.settings?.theme || themeMode);
+  const initial = (user.name || user.email || "F").trim().slice(0, 1).toLocaleUpperCase("ru-RU");
+  return `
+    <section class="view">
+      <div class="settings-grid">
+        <section class="panel settings-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Тема сайта</h2>
+              <p>Выберите комфортный режим интерфейса</p>
+            </div>
+          </div>
+          <div class="theme-options" role="group" aria-label="Тема сайта">
+            ${THEME_OPTIONS.map((theme) => `
+              <button class="theme-option ${theme.id === currentTheme ? "active" : ""}" data-theme-mode="${theme.id}" type="button" aria-pressed="${theme.id === currentTheme ? "true" : "false"}">
+                <span class="theme-icon">${icon(theme.icon)}</span>
+                <strong>${escapeHtml(theme.label)}</strong>
+                <small>${escapeHtml(theme.hint)}</small>
+              </button>
+            `).join("")}
+          </div>
+        </section>
+
+        <section class="panel settings-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Профиль</h2>
+              <p>${escapeHtml(user.email || "Почта не указана")}</p>
+            </div>
+          </div>
+          <div class="settings-profile">
+            <div class="settings-avatar">${escapeHtml(initial)}</div>
+            <form class="profile-form" id="profile-form">
+              <label class="settings-label">
+                Имя профиля
+                <input id="profile-name" name="name" autocomplete="name" maxlength="60" value="${escapeAttr(user.name || "")}" required />
+              </label>
+              <button class="primary-button" type="submit">${icon("save")} Сохранить имя</button>
+            </form>
+          </div>
+        </section>
+      </div>
+    </section>
+  `;
+}
+
 function renderAdminUsers() {
   const admin = state.admin || { userCount: 0, adminCount: 0, activeSessionCount: 0, users: [] };
   const users = Array.isArray(admin.users) ? admin.users : [];
@@ -1202,6 +1308,13 @@ function bindEvents() {
   const limitForm = document.querySelector("#category-limit-form");
   if (limitForm) limitForm.addEventListener("submit", submitCategoryLimits);
 
+  const profileForm = document.querySelector("#profile-form");
+  if (profileForm) profileForm.addEventListener("submit", submitProfile);
+
+  document.querySelectorAll("[data-theme-mode]").forEach((button) => {
+    button.addEventListener("click", () => saveTheme(button.dataset.themeMode));
+  });
+
   document.querySelectorAll("[data-category-form]").forEach((form) => {
     form.addEventListener("submit", submitCategory);
   });
@@ -1302,6 +1415,7 @@ async function logout() {
   } catch {}
   state = null;
   lastResult = null;
+  authMode = "login";
   renderAuth();
 }
 
@@ -1319,7 +1433,7 @@ async function submitQuick(event) {
     const selectedDate = dateInputToIso(dateInput?.value);
     if (selectedDate) payload.occurredAt = selectedDate;
     const result = await api("/api/transactions", {
-      method: "POST",
+        method: "POST",
       body: JSON.stringify(payload)
     });
     lastResult = result;
@@ -1352,6 +1466,57 @@ async function submitBudget(event) {
     toast("Бюджет сохранен", money(state.summary.budget));
   } catch (error) {
     toast("Бюджет не сохранен", error.message);
+  }
+}
+
+async function submitProfile(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const input = form.querySelector("input[name='name']");
+  const button = form.querySelector("button[type='submit']");
+  const name = input.value.trim();
+  if (!name || name === state.user?.name) return;
+  button.disabled = true;
+  try {
+    const result = await api("/api/profile", {
+      method: "PUT",
+      body: JSON.stringify({ name })
+    });
+    state.user = result.user;
+    render();
+    toast("Профиль обновлен", result.user.name);
+  } catch (error) {
+    toast("Имя не сохранено", error.message);
+    button.disabled = false;
+  }
+}
+
+async function saveTheme(nextTheme) {
+  const previousTheme = normalizeThemeMode(state.settings?.theme || themeMode);
+  const theme = normalizeThemeMode(nextTheme);
+  if (theme === previousTheme) return;
+
+  applyTheme(theme);
+  state.settings = { ...state.settings, theme };
+  render();
+
+  try {
+    const result = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ theme })
+    });
+    state.settings = result.settings;
+    state.summary = result.summary;
+    state.insights = result.insights;
+    themeMode = normalizeThemeMode(result.settings?.theme);
+    applyTheme(themeMode);
+    render();
+    toast("Тема сохранена", themeLabel(themeMode));
+  } catch (error) {
+    state.settings = { ...state.settings, theme: previousTheme };
+    applyTheme(previousTheme);
+    render();
+    toast("Тема не сохранена", error.message);
   }
 }
 
@@ -1593,6 +1758,10 @@ function toneLabel(tone) {
     good: "Хорошо",
     neutral: "Наблюдение"
   }[tone] || "Совет";
+}
+
+function themeLabel(theme) {
+  return THEME_OPTIONS.find((item) => item.id === theme)?.label || "Системная";
 }
 
 function categoryById(id) {
