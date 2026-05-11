@@ -6,8 +6,13 @@ const crypto = require("node:crypto");
 const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
-const DATA_DIR = path.join(ROOT, "data");
-const DATA_FILE = path.join(DATA_DIR, "finley.json");
+const DATA_FILE = process.env.FINLEY_DATA_FILE
+  ? path.resolve(process.env.FINLEY_DATA_FILE)
+  : path.join(
+    process.env.FINLEY_DATA_DIR ? path.resolve(process.env.FINLEY_DATA_DIR) : path.join(ROOT, "data"),
+    "finley.json"
+  );
+const DATA_DIR = path.dirname(DATA_FILE);
 const SESSION_COOKIE = "finley_session";
 const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Moscow";
@@ -51,6 +56,8 @@ const CUSTOM_CATEGORY_COLORS = [
   "#d94b6a",
   "#667085"
 ];
+
+const THEME_MODES = new Set(["system", "light", "dark"]);
 
 const MONTH_ALIASES = [
   ["января", 0], ["январь", 0], ["янв", 0],
@@ -434,8 +441,14 @@ function defaultSettings() {
     monthlyBudget: 120000,
     categoryBudgets: {},
     currency: "RUB",
-    locale: "ru-RU"
+    locale: "ru-RU",
+    theme: "system"
   };
+}
+
+function normalizeTheme(value) {
+  const theme = String(value || "").trim().toLowerCase();
+  return THEME_MODES.has(theme) ? theme : "system";
 }
 
 function sanitizeCategoryBudgets(input, allowedIds = null) {
@@ -457,7 +470,8 @@ function normalizeSettings(settings) {
     ...defaults,
     ...source,
     monthlyBudget: Number.isFinite(monthlyBudget) && monthlyBudget >= 0 ? roundMoney(monthlyBudget) : defaults.monthlyBudget,
-    categoryBudgets: sanitizeCategoryBudgets(source.categoryBudgets)
+    categoryBudgets: sanitizeCategoryBudgets(source.categoryBudgets),
+    theme: normalizeTheme(source.theme)
   };
 }
 
@@ -1111,6 +1125,18 @@ async function apiState(req, res) {
   });
 }
 
+async function apiUpdateProfile(req, res) {
+  const context = await requireAuth(req, res);
+  if (!context) return;
+  const body = await readJson(req);
+  const name = cleanTitle(body.name || "").slice(0, 60);
+  if (name.length < 2) return responseError(res, 422, "Введите имя профиля.");
+
+  context.user.name = name;
+  await writeStore(context.store);
+  responseJson(res, 200, { user: publicUser(context.user) });
+}
+
 async function apiDeleteAdminUser(req, res, id) {
   const context = await requireAdmin(req, res);
   if (!context) return;
@@ -1252,6 +1278,14 @@ async function apiUpdateSettings(req, res) {
       body.categoryBudgets,
       categoryIdsFor(context.user)
     );
+  }
+
+  if (body.theme !== undefined) {
+    const theme = normalizeTheme(body.theme);
+    if (theme !== String(body.theme || "").trim().toLowerCase()) {
+      return responseError(res, 422, "Выберите светлую, темную или системную тему.");
+    }
+    context.user.settings.theme = theme;
   }
 
   context.user.settings.categoryBudgets = sanitizeCategoryBudgets(
@@ -1762,6 +1796,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/auth/logout" && req.method === "POST") return await apiLogout(req, res);
     if (url.pathname === "/healthz" && req.method === "GET") return responseJson(res, 200, { ok: true });
     if (url.pathname === "/api/state" && req.method === "GET") return await apiState(req, res);
+    if (url.pathname === "/api/profile" && req.method === "PUT") return await apiUpdateProfile(req, res);
     if (url.pathname.startsWith("/api/admin/users/") && req.method === "DELETE") {
       return await apiDeleteAdminUser(req, res, url.pathname.split("/").pop());
     }

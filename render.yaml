@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: finley-ai
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_TIME_ZONE
+        value: Europe/Moscow
+      - key: FINLEY_LLM_MODE
+        value: auto
+      - key: FINLEY_USE_POLLINATIONS
+        value: true
